@@ -37,30 +37,51 @@ interface GeminiMed {
   frequency: string;
   duration: string;
   instructions?: string;
+  reminderTimes?: string[];
+}
+
+interface GeminiAnalysis {
+  medications: GeminiMed[];
+  recoveryGuidance: string; // Markdown formatted advice
 }
 
 async function analyseWithGemini(
   fileBase64: string,
   mimeType: string
-): Promise<GeminiMed[]> {
-  const prompt = `You are a clinical pharmacist AI. Analyse this hospital discharge summary document.
+): Promise<GeminiAnalysis> {
+  const prompt = `You are a clinical pharmacist and recovery specialist AI. 
+CRITICAL: Scan EVERY SINGLE PAGE of this document. Do not miss any hidden sections or late-page medication lists.
 
-Extract ALL medications listed and return ONLY a valid JSON array (no markdown, no explanation) in this exact format:
-[
-  {
-    "name": "Medication name",
-    "dosage": "e.g. 500mg",
-    "frequency": "e.g. Twice daily / Once daily / Three times daily / Every 8 hours",
-    "duration": "e.g. 5 days / 2 weeks / 1 month (empty string if not mentioned)",
-    "instructions": "e.g. Take after food / Take with water / Avoid alcohol (empty string if none)"
-  }
-]
+Tasks:
+1. Extract ALL medications listed.
+2. Generate comprehensive, personalized recovery guidance based on the diagnosis, surgery, and specific patient details found.
 
-Rules:
-- Include ALL medications — tablets, injections, syrups, eye drops, everything.
-- Normalize frequency to English (e.g. "BD" → "Twice daily", "TDS" → "Three times daily", "OD" → "Once daily", "QID" → "Four times daily", "SOS" → "As needed").
-- If you cannot find any medications, return an empty array: []
-- Return ONLY the JSON array, nothing else.`;
+Return ONLY a valid JSON object (no markdown, no explanation) in this exact format:
+{
+  "medications": [
+    {
+      "name": "Medication name",
+      "dosage": "e.g. 500mg",
+      "frequency": "e.g. Twice daily",
+      "duration": "e.g. 5 days",
+      "instructions": "e.g. Take after food",
+      "reminderTimes": ["08:00", "20:00"] 
+    }
+  ],
+  "recoveryGuidance": "Markdown formatted recovery advice including: Diet (specific to surgery), Hydration, Exercise limits, Wound care, and Warning signs."
+}
+
+Rules for Medications:
+- Include tablets, injections, syrups, etc.
+- Normalize frequency (BD -> Twice daily, etc.).
+- Convert 'reminderTimes' to HH:mm (24h) if mentioned, otherwise provide logical defaults based on frequency (e.g. Twice daily -> ["09:00", "21:00"]).
+
+Rules for Recovery Guidance:
+- Use Markdown headers (###).
+- Be specific to the surgery mentioned (e.g. Knee Replacement needs different exercises than Appendectomy).
+- Include specific dietary restrictions if mentioned.
+
+If no data is found, return empty fields.`;
 
   const body = {
     contents: [
@@ -94,23 +115,26 @@ Rules:
       throw new Error("INVALID_API_KEY");
     }
     console.error("Gemini API error:", res.status, errResponse);
-    return [];
+    return { medications: [], recoveryGuidance: "" };
   }
 
   const data = await res.json();
   const text: string = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
 
   try {
-    const jsonMatch = text.match(/\[[\s\S]*\]/);
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-      console.warn("No JSON array found in response:", text);
-      return [];
+      console.warn("No JSON object found in response:", text);
+      return { medications: [], recoveryGuidance: "" };
     }
     const parsed = JSON.parse(jsonMatch[0]);
-    return Array.isArray(parsed) ? parsed : [];
+    return {
+      medications: Array.isArray(parsed.medications) ? parsed.medications : [],
+      recoveryGuidance: parsed.recoveryGuidance || "",
+    };
   } catch {
     console.warn("Gemini response parse error. Raw text:", text);
-    return [];
+    return { medications: [], recoveryGuidance: "" };
   }
 }
 
@@ -143,7 +167,7 @@ function getGeminiMimeType(file: File): string {
 
 export function OnboardingUpload() {
   const navigate = useNavigate();
-  const { data, addDocument, markDischargeUploaded, addMedications } = useRecovery();
+  const { data, addDocument, markDischargeUploaded, addMedications, updateRecoveryData } = useRecovery();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [step, setStep] = useState<"upload" | "analyzing" | "medications" | "complete">("upload");
@@ -157,7 +181,13 @@ export function OnboardingUpload() {
   const [medications, setMedications] = useState<Medication[]>([]);
   const [notifStatus, setNotifStatus] = useState<"idle" | "granted" | "denied">("idle");
   const [showAddMed, setShowAddMed] = useState(false);
-  const [newMed, setNewMed] = useState({ name: "", dosage: "", frequency: "", duration: "" });
+  const [newMed, setNewMed] = useState({ 
+    name: "", 
+    dosage: "", 
+    frequency: "", 
+    duration: "", 
+    reminderTimes: "" // Comma separated string for UI
+  });
   const [newMedErrors, setNewMedErrors] = useState<Record<string, string>>({});
 
   // ── Stage labels ────────────────────────────────────────────────────────────
@@ -199,7 +229,7 @@ export function OnboardingUpload() {
       setAnalysisStage(3);
       await delay(500);
 
-      const meds: Medication[] = raw.map((m, i) => ({
+      const meds: Medication[] = raw.medications.map((m, i) => ({
         id: `${Date.now()}-${i}`,
         name: m.name ?? "Unknown",
         dosage: m.dosage ?? "",
@@ -207,7 +237,11 @@ export function OnboardingUpload() {
         duration: m.duration ?? "",
         instructions: m.instructions ?? "",
         isActive: true,
+        reminderTimes: m.reminderTimes && m.reminderTimes.length > 0 ? m.reminderTimes : undefined,
       }));
+
+      // Store AI guidance
+      updateRecoveryData({ recoveryGuidance: raw.recoveryGuidance });
 
       setExtractedCount(meds.length);
       setMedications(meds);
@@ -248,8 +282,24 @@ export function OnboardingUpload() {
 
   const addMedication = () => {
     if (!validateNewMed()) return;
-    setMedications((prev) => [...prev, { ...newMed, id: Date.now().toString(), isActive: true }]);
-    setNewMed({ name: "", dosage: "", frequency: "", duration: "" });
+    
+    // Parse reminder times from "08:00, 20:00" to ["08:00", "20:00"]
+    const times = newMed.reminderTimes
+      ? newMed.reminderTimes.split(",").map(t => t.trim()).filter(t => /^([01]\d|2[0-3]):?([0-5]\d)$/.test(t))
+      : undefined;
+
+    const med: Medication = {
+      id: Date.now().toString(),
+      name: newMed.name,
+      dosage: newMed.dosage,
+      frequency: newMed.frequency,
+      duration: newMed.duration,
+      reminderTimes: times,
+      isActive: true,
+    };
+
+    setMedications((prev) => [...prev, med]);
+    setNewMed({ name: "", dosage: "", frequency: "", duration: "", reminderTimes: "" });
     setNewMedErrors({});
     setShowAddMed(false);
   };
@@ -610,6 +660,18 @@ export function OnboardingUpload() {
                       onChange={(e) => setNewMed({ ...newMed, duration: e.target.value })}
                       className="w-full px-3 py-2 rounded-lg border border-border bg-input-background text-[13px] focus:border-primary transition-colors"
                     />
+                    <div className="col-span-2">
+                       <input
+                        type="text"
+                        placeholder="Reminder Times (e.g. 08:00, 20:00)"
+                        value={newMed.reminderTimes}
+                        onChange={(e) => setNewMed({ ...newMed, reminderTimes: e.target.value })}
+                        className="w-full px-3 py-2 rounded-lg border border-border bg-input-background text-[13px] focus:border-primary transition-colors"
+                      />
+                      <p className="text-[10px] text-muted-foreground mt-1 px-1">
+                        Optional. Enter comma-separated 24h times (HH:mm). If empty, we'll use frequency.
+                      </p>
+                    </div>
                   </div>
                   <button
                     onClick={addMedication}

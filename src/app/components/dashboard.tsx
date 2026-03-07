@@ -16,7 +16,7 @@ import { Link } from "react-router";
 import { parseTimesFromFrequency } from "./notifications";
 
 export function Dashboard() {
-  const { data } = useRecovery();
+  const { data, updateMedicationLog } = useRecovery();
   const latest = data.healthEntries[0];
   const previous = data.healthEntries[1];
 
@@ -146,20 +146,23 @@ export function Dashboard() {
             {(() => {
               const todayStr = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD
               const currentHour = new Date().getHours();
-              const doses: { medName: string; time: string; hour: number; done: boolean }[] = [];
+              const doses: { medId: string; medName: string; time: string; hour: number; done: boolean }[] = [];
 
               data.medications.filter(m => m.isActive).forEach(med => {
-                const times = parseTimesFromFrequency(med.frequency);
-                times.forEach(hour => {
-                  const actualHour = hour === 24 ? 0 : hour;
-                  const timeStr = `${actualHour.toString().padStart(2, "0")}:00`;
+                const times = med.reminderTimes && med.reminderTimes.length > 0 
+                  ? med.reminderTimes 
+                  : parseTimesFromFrequency(med.frequency).map(h => `${(h === 24 ? 0 : h).toString().padStart(2, "0")}:00`);
+
+                times.forEach(timeStr => {
+                  const [h] = timeStr.split(":").map(Number);
                   const log = data.medicationLogs.find(
                     l => l.medicationId === med.id && l.date === todayStr && l.time === timeStr
                   );
                   doses.push({
+                    medId: med.id,
                     medName: med.name + (med.dosage ? ` ${med.dosage}` : ""),
                     time: timeStr,
-                    hour: actualHour,
+                    hour: h,
                     done: !!log?.takenAt
                   });
                 });
@@ -175,7 +178,7 @@ export function Dashboard() {
                 );
               }
 
-              return doses.slice(0, 4).map((dose, idx) => {
+              return doses.slice(0, 5).map((dose, idx) => {
                 // Formatting time (e.g. 08:00 -> 8:00 AM)
                 const [hourStr, minStr] = dose.time.split(":");
                 let hr = parseInt(hourStr, 10);
@@ -186,11 +189,14 @@ export function Dashboard() {
 
                 return (
                   <ReminderItem
-                    key={`${dose.medName}-${idx}`}
+                    key={`${dose.medId}-${dose.time}-${idx}`}
                     icon={<Pill className="w-4 h-4 text-purple-500" />}
                     title={dose.medName}
                     time={displayTime}
                     done={dose.done}
+                    onToggle={() => {
+                      updateMedicationLog(dose.medId, todayStr, dose.time, dose.done ? "skipped" : "taken");
+                    }}
                   />
                 );
               });
@@ -335,22 +341,33 @@ function ReminderItem({
   title,
   time,
   done,
+  onToggle,
 }: {
   icon: React.ReactNode;
   title: string;
   time: string;
   done?: boolean;
+  onToggle?: () => void;
 }) {
   return (
-    <div className="flex items-start gap-3">
-      <div className="mt-0.5">{icon}</div>
-      <div className="flex-1">
-        <p className={`text-[13px] ${done ? "line-through text-muted-foreground" : "text-foreground"}`}>
+    <div className={`flex items-start gap-3 p-2 rounded-lg transition-colors ${done ? "bg-muted/30" : "hover:bg-muted/50"}`}>
+      <div className="mt-1">{icon}</div>
+      <div className="flex-1 min-w-0">
+        <p className={`text-[13px] truncate ${done ? "line-through text-muted-foreground" : "text-foreground font-medium"}`}>
           {title}
         </p>
         <p className="text-[11px] text-muted-foreground">{time}</p>
       </div>
-      {done && <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />}
+      <button 
+        onClick={(e) => { e.preventDefault(); onToggle?.(); }}
+        className={`shrink-0 w-6 h-6 rounded-full border flex items-center justify-center transition-all ${
+          done 
+            ? "bg-emerald-500 border-emerald-500 text-white" 
+            : "border-border hover:border-primary text-transparent"
+        }`}
+      >
+        <CheckCircle2 className="w-3.5 h-3.5" />
+      </button>
     </div>
   );
 }

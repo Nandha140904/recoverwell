@@ -48,11 +48,12 @@ export function Medications() {
   const schedule: Dose[] = [];
 
   data.medications.filter((m) => m.isActive).forEach((med) => {
-    const times = parseTimesFromFrequency(med.frequency);
-    times.forEach((hour) => {
-      // Normalize hour to 0-23
-      const actualHour = hour % 24;
-      const timeStr = `${actualHour.toString().padStart(2, "0")}:00`;
+    const times = med.reminderTimes && med.reminderTimes.length > 0
+      ? med.reminderTimes
+      : parseTimesFromFrequency(med.frequency).map(h => `${(h % 24).toString().padStart(2, "0")}:00`);
+
+    times.forEach((timeStr) => {
+      const actualHour = parseInt(timeStr.split(":")[0], 10);
       
       const log = data.medicationLogs.find(
         (l) => l.medicationId === med.id && l.date === todayStr && l.time === timeStr

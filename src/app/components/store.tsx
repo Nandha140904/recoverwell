@@ -42,6 +42,7 @@ export interface Medication {
   duration: string;
   instructions?: string;
   isActive: boolean;
+  reminderTimes?: string[]; // Custom hours (HH:mm)
 }
 
 export interface MedicationLog {
@@ -63,6 +64,7 @@ export interface RecoveryData {
   medications: Medication[];
   medicationLogs: MedicationLog[];
   userProfile: UserProfile | null;
+  recoveryGuidance?: string; // AI generated markdown or JSON
 }
 
 const defaultRecoveryData: RecoveryData = {
@@ -84,6 +86,7 @@ interface RecoveryContextType {
   addDocument: (doc: Omit<MedicalDocument, "id">) => void;
   addMedications: (meds: Omit<Medication, "id" | "isActive">[]) => void;
   updateMedicationLog: (medicationId: string, date: string, time: string, status: "taken" | "skipped") => void;
+  updateRecoveryData: (updates: Partial<RecoveryData>) => void;
   setUserProfile: (profile: UserProfile) => void;
   loginAs: (profile: UserProfile) => void;
   markDischargeUploaded: () => void;
@@ -193,6 +196,10 @@ export function RecoveryProvider({ children }: { children: ReactNode }) {
     });
   };
 
+  const updateRecoveryData = (updates: Partial<RecoveryData>) => {
+    setData((prev) => ({ ...prev, ...updates }));
+  };
+
   const setUserProfile = (profile: UserProfile) => {
     setData((prev) => ({ ...prev, userProfile: profile }));
   };
@@ -216,7 +223,7 @@ export function RecoveryProvider({ children }: { children: ReactNode }) {
 
   return (
     <RecoveryContext.Provider value={{
-      data, addHealthEntry, addDocument, addMedications, updateMedicationLog,
+      data, addHealthEntry, addDocument, addMedications, updateMedicationLog, updateRecoveryData,
       setUserProfile, loginAs, markDischargeUploaded, logout, applyCloudSync
     }}>
       {children}

@@ -10,6 +10,8 @@ import {
   CheckCircle2,
   Clock,
   Heart,
+  Brain,
+  Sparkles,
 } from "lucide-react";
 
 interface GuideSection {
@@ -22,7 +24,7 @@ interface GuideSection {
 
 export function RecoveryGuide() {
   const { data } = useRecovery();
-  const [activeSection, setActiveSection] = useState("diet");
+  const [activeSection, setActiveSection] = useState(data.recoveryGuidance ? "ai-plan" : "diet");
 
   const sections: GuideSection[] = [
     {
@@ -216,6 +218,16 @@ export function RecoveryGuide() {
     },
   ];
 
+  if (data.recoveryGuidance) {
+    sections.unshift({
+      id: "ai-plan",
+      title: "AI Recovery Plan",
+      icon: <Brain className="w-5 h-5" />,
+      color: "text-indigo-600 bg-indigo-50",
+      items: [],
+    });
+  }
+
   const active = sections.find((s) => s.id === activeSection) || sections[0];
 
   // Recovery timeline
@@ -335,31 +347,56 @@ export function RecoveryGuide() {
           </div>
 
           <div className="space-y-4">
-            {active.items.map((item, i) => (
-              <div
-                key={i}
-                className={`rounded-lg p-4 ${
-                  item.important ? "bg-secondary border border-primary/10" : "bg-muted/50"
-                }`}
-              >
-                <div className="flex items-start gap-2">
-                  <ChevronRight className="w-4 h-4 text-primary shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-[14px] text-foreground">
-                      {item.title}
-                      {item.important && (
-                        <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary">
-                          Important
-                        </span>
-                      )}
-                    </p>
-                    <p className="text-[13px] text-muted-foreground mt-1 leading-relaxed">
-                      {item.description}
-                    </p>
+            {active.id === "ai-plan" && data.recoveryGuidance ? (
+              <div className="prose prose-sm max-w-none">
+                <div className="bg-indigo-50/50 border border-indigo-100 rounded-xl p-6">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Sparkles className="w-4 h-4 text-indigo-500" />
+                    <span className="text-[12px] font-medium text-indigo-600 uppercase tracking-wider">Generated from your Discharge Summary</span>
+                  </div>
+                  <div className="space-y-6 text-[14px] leading-relaxed text-foreground whitespace-pre-wrap">
+                    {data.recoveryGuidance.split('\n').map((line, i) => {
+                      if (line.startsWith('###')) {
+                        return <h3 key={i} className="text-[16px] font-semibold mt-6 mb-2 text-indigo-900 border-b border-indigo-100 pb-1">{line.replace('###', '').trim()}</h3>;
+                      }
+                      if (line.startsWith('##')) {
+                        return <h2 key={i} className="text-[18px] font-bold mt-8 mb-3 text-indigo-950">{line.replace('##', '').trim()}</h2>;
+                      }
+                      if (line.startsWith('-') || line.startsWith('*')) {
+                        return <div key={i} className="flex gap-2 ml-1 my-1"><span className="text-indigo-400 mt-1.5 w-1.5 h-1.5 rounded-full bg-current shrink-0" /><span>{line.substring(1).trim()}</span></div>;
+                      }
+                      return line.trim() ? <p key={i} className="mb-2">{line}</p> : <div key={i} className="h-2" />;
+                    })}
                   </div>
                 </div>
               </div>
-            ))}
+            ) : (
+              active.items.map((item, i) => (
+                <div
+                  key={i}
+                  className={`rounded-lg p-4 ${
+                    item.important ? "bg-secondary border border-primary/10" : "bg-muted/50"
+                  }`}
+                >
+                  <div className="flex items-start gap-2">
+                    <ChevronRight className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-[14px] text-foreground">
+                        {item.title}
+                        {item.important && (
+                          <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary">
+                            Important
+                          </span>
+                        )}
+                      </p>
+                      <p className="text-[13px] text-muted-foreground mt-1 leading-relaxed">
+                        {item.description}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
       </div>
