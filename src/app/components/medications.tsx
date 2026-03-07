@@ -31,7 +31,7 @@ export function Medications() {
     }
   };
 
-  const todayStr = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
+  const todayStr = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD
 
   // Generate today's schedule
   interface Dose {
@@ -50,8 +50,8 @@ export function Medications() {
   data.medications.filter((m) => m.isActive).forEach((med) => {
     const times = parseTimesFromFrequency(med.frequency);
     times.forEach((hour) => {
-      // Handle the wrapping case for 24
-      const actualHour = hour === 24 ? 0 : hour;
+      // Normalize hour to 0-23
+      const actualHour = hour % 24;
       const timeStr = `${actualHour.toString().padStart(2, "0")}:00`;
       
       const log = data.medicationLogs.find(

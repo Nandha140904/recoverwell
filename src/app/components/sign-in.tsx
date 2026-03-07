@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
 import { useRecovery } from "./store";
-import { ApiRequestError, fetchWithTimeout, readApiError } from "../lib/api";
+import { ApiRequestError, fetchWithTimeout, readApiError, buildApiUrl } from "../lib/api";
 import {
   HeartPulse,
   User,
@@ -152,6 +152,9 @@ export function SignIn() {
       let cloudError: string | null = null;
 
       try {
+        const fetchUrl = buildApiUrl("/api/pull");
+        console.log(`[Diagnostic] Initiating sign-in pull from: ${fetchUrl}`);
+        
         const res = await fetchWithTimeout(
           "/api/pull",
           {
@@ -159,8 +162,10 @@ export function SignIn() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ mobile: login.mobile }),
           },
-          8000
+          15000 // Increased timeout for potentially slow remote connections
         );
+
+        console.log(`[Diagnostic] Sign-in pull response: ${res.status} ${res.statusText}`);
 
         if (res.ok) {
           const cloudData = await res.json();

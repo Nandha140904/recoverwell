@@ -4,25 +4,27 @@ import { type Medication } from "./store";
 export function parseTimesFromFrequency(frequency: string): number[] {
   const f = frequency.toLowerCase();
 
-  if (f.includes("once") || f.includes("1 time") || f.includes("daily")) {
+  // Handle common medical abbreviations normalization
+  if (f === "od" || f === "daily" || f.includes("once") || f.includes("1 time")) {
     return [8]; // 8 AM
   }
-  if (f.includes("twice") || f.includes("2 time") || f.includes("every 12")) {
+  if (f === "bd" || f === "bid" || f.includes("twice") || f.includes("2 time") || f.includes("every 12")) {
     return [8, 20]; // 8 AM, 8 PM
   }
-  if (f.includes("3 time") || f.includes("thrice") || f.includes("three time")) {
+  if (f === "tds" || f === "tid" || f.includes("3 time") || f.includes("thrice") || f.includes("three time")) {
     return [8, 14, 20]; // 8 AM, 2 PM, 8 PM
   }
-  if (f.includes("4 time") || f.includes("every 6")) {
-    return [6, 12, 18, 24]; // every 6 hours
+  if (f === "qid" || f.includes("4 time") || f.includes("every 6")) {
+    return [6, 12, 18, 0]; // 6 AM, 12 PM, 6 PM, 12 AM
   }
   if (f.includes("every 8")) {
-    return [8, 16, 24];
+    return [8, 16, 0];
   }
   if (f.includes("every 4")) {
-    return [8, 12, 16, 20, 24];
+    return [8, 12, 16, 20, 0];
   }
-  // Default: once a day
+  
+  // Default fallback: once a day at 8 AM
   return [8];
 }
 

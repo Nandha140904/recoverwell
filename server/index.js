@@ -47,13 +47,26 @@ app.use(
         callback(null, true);
         return;
       }
-
       callback(new Error("Origin not allowed by CORS"));
     },
     credentials: false,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
   })
 );
-app.use(express.json());
+
+// ── Logging Middleware ────────────────────────────────────────────────────────
+app.use((req, res, next) => {
+  const start = Date.now();
+  console.log(`[${new Date().toISOString()}] Initiating ${req.method} ${req.url}`);
+  res.on("finish", () => {
+    const duration = Date.now() - start;
+    console.log(`[${new Date().toISOString()}] Completed ${req.method} ${req.url} - ${res.statusCode} (${duration}ms)`);
+  });
+  next();
+});
+
+app.use(express.json({ limit: "15mb" })); // Increased for image/PDF analysis payloads
 
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
@@ -255,7 +268,9 @@ if (existsSync(distPath)) {
 }
 
 // ── Start ─────────────────────────────────────────────────────────────────────
-app.listen(PORT, () => {
-  console.log(`\n🚀  RecoverWell server  →  http://localhost:${PORT}`);
-  console.log(`🏥  Health check       →  GET /api/health\n`);
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`\n🚀  RecoverWell server successfully started`);
+  console.log(`🏥  Internal access  →  http://localhost:${PORT}`);
+  console.log(`🌐  Remote access    →  http://0.0.0.0:${PORT}`);
+  console.log(`📊  Health check      →  GET /api/health\n`);
 });

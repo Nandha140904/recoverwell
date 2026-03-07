@@ -7,24 +7,45 @@ function envNumber(name, fallback) {
 }
 
 export async function initDB() {
-  const connectionString = process.env.DATABASE_URL;
+  let connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
     throw new Error("DATABASE_URL must be provided in .env");
   }
 
-  const pool = new Pool({
-    connectionString,
-    ssl: { rejectUnauthorized: false }, // Required for Supabase connections
-    connectionTimeoutMillis: envNumber("DB_CONNECTION_TIMEOUT_MS", 5000),
-    idleTimeoutMillis: envNumber("DB_IDLE_TIMEOUT_MS", 30000),
-    query_timeout: envNumber("DB_QUERY_TIMEOUT_MS", 8000),
-    statement_timeout: envNumber("DB_STATEMENT_TIMEOUT_MS", 8000),
-    keepAlive: true,
-    max: envNumber("DB_POOL_MAX", 10),
-  });
+  // If the user specifies port 6543 (pgbouncer), we use it but define a
+  // shorter connection timeout to handle the case where it might be down or paused.
+  const isPgbouncer = connectionString.includes(":6543");
 
-  // Test connection
-  await pool.query("SELECT 1");
+  const poolConfig = {
+    connectionString,
+    ssl: { rejectUnauthorized: false }, // Required for Supabase
+    connectionTimeoutMillis: envNumber("DB_CONNECTION_TIMEOUT_MS", 10000),
+    idleTimeoutMillis: envNumber("DB_IDLE_TIMEOUT_MS", 30000),
+    query_timeout: envNumber("DB_QUERY_TIMEOUT_MS", 20000),
+    max: envNumber("DB_POOL_MAX", 20),
+    keepAlive: true,
+  };
+
+  const pool = new Pool(poolConfig);
+
+  console.log(`Connecting to database (${isPgbouncer ? "PgBouncer pooled" : "Direct"})...`);
+
+  // Simple retry wrapper for startup
+  let dbHealthy = false;
+  for (let i = 0; i < 5; i++) { // Increased to 5 attempts
+    try {
+      await pool.query("SELECT 1");
+      dbHealthy = true;
+      break;
+    } catch (err) {
+      console.error(`DB connection attempt ${i + 1} failed. Retrying in 5s...`, err.message);
+      await new Promise(r => setTimeout(r, 5000)); // Increased to 5s wait
+    }
+  }
+
+  if (!dbHealthy) {
+    throw new Error("Could not connect to database after multiple attempts.");
+  }
 
   // Create tables using PostgreSQL syntax
   await pool.query(`

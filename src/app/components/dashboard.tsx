@@ -10,8 +10,10 @@ import {
   Droplets,
   Pill,
   ArrowRight,
+  Bell,
 } from "lucide-react";
 import { Link } from "react-router";
+import { parseTimesFromFrequency } from "./notifications";
 
 export function Dashboard() {
   const { data } = useRecovery();
@@ -131,28 +133,79 @@ export function Dashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Today's Reminders */}
         <div className="bg-card rounded-xl border border-border p-5">
-          <h3 className="text-[15px] mb-4">Today's Reminders</h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-[15px]">Today's Reminders</h3>
+            <Link
+              to="/medications"
+              className="text-[12px] text-primary flex items-center gap-1 hover:underline"
+            >
+              Manage <ArrowRight className="w-3 h-3" />
+            </Link>
+          </div>
           <div className="space-y-3">
-            <ReminderItem
-              icon={<Pill className="w-4 h-4 text-purple-500" />}
-              title="Take Acetaminophen 500mg"
-              time="8:00 AM, 2:00 PM, 8:00 PM"
-              done
-            />
+            {(() => {
+              const todayStr = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD
+              const currentHour = new Date().getHours();
+              const doses: { medName: string; time: string; hour: number; done: boolean }[] = [];
+
+              data.medications.filter(m => m.isActive).forEach(med => {
+                const times = parseTimesFromFrequency(med.frequency);
+                times.forEach(hour => {
+                  const actualHour = hour === 24 ? 0 : hour;
+                  const timeStr = `${actualHour.toString().padStart(2, "0")}:00`;
+                  const log = data.medicationLogs.find(
+                    l => l.medicationId === med.id && l.date === todayStr && l.time === timeStr
+                  );
+                  doses.push({
+                    medName: med.name + (med.dosage ? ` ${med.dosage}` : ""),
+                    time: timeStr,
+                    hour: actualHour,
+                    done: !!log?.takenAt
+                  });
+                });
+              });
+
+              doses.sort((a, b) => a.hour - b.hour);
+
+              if (doses.length === 0) {
+                return (
+                  <div className="py-8 text-center border border-dashed border-border rounded-lg">
+                    <p className="text-[13px] text-muted-foreground">No medications for today.</p>
+                  </div>
+                );
+              }
+
+              return doses.slice(0, 4).map((dose, idx) => {
+                // Formatting time (e.g. 08:00 -> 8:00 AM)
+                const [hourStr, minStr] = dose.time.split(":");
+                let hr = parseInt(hourStr, 10);
+                const ampm = hr >= 12 ? "PM" : "AM";
+                if (hr === 0) hr = 12;
+                if (hr > 12) hr -= 12;
+                const displayTime = `${hr}:${minStr} ${ampm}`;
+
+                return (
+                  <ReminderItem
+                    key={`${dose.medName}-${idx}`}
+                    icon={<Pill className="w-4 h-4 text-purple-500" />}
+                    title={dose.medName}
+                    time={displayTime}
+                    done={dose.done}
+                  />
+                );
+              });
+            })()}
+
+            {/* Other standard reminders */}
             <ReminderItem
               icon={<Droplets className="w-4 h-4 text-blue-500" />}
               title="Hydration Goal: 8 glasses of water"
-              time="5/8 glasses completed"
+              time="Self-report in symptoms log"
             />
             <ReminderItem
               icon={<Activity className="w-4 h-4 text-emerald-500" />}
               title="Gentle Range-of-Motion Exercises"
-              time="15 minutes — Afternoon"
-            />
-            <ReminderItem
-              icon={<Clock className="w-4 h-4 text-amber-500" />}
-              title="Wound Care — Check incision site"
-              time="Before bedtime"
+              time="15 minutes — Afternoons"
             />
           </div>
         </div>
