@@ -2,12 +2,11 @@
   publish = "dist"
   command = "npm run build"
 
-[[redirects]]
-  from = "/api/*"
-  to = "/api/:splat"
-  status = 200
-
+# SPA Routing: Redirect all requests to index.html so React Router handles navigation
 [[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
+
+# Optional: If you set VITE_API_BASE_URL in Netlify ENV, proxying might happen here.
+# But for now, we ensure basic navigation works.

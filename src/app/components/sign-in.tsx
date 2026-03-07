@@ -199,18 +199,12 @@ export function SignIn() {
         }
 
         if (res.status === 404) {
-          const errorMessage = await readApiError(
-            res,
-            "Cloud login endpoint not found."
-          );
-
-          if (errorMessage !== "User not found") {
-            cloudError = errorMessage;
-          }
+          const errorMessage = await readApiError(res, "");
+          cloudError = errorMessage || "The recovery server endpoint could not be found. If you are on Netlify, please ensure your VITE_API_BASE_URL is configured to point to your hosted backend.";
         } else {
           cloudError = await readApiError(
             res,
-            "Unable to sign in with the recovery server right now."
+            "The recovery server is currently unreachable or undergoing maintenance."
           );
         }
       } catch (error) {
