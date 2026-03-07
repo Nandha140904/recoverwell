@@ -17,12 +17,12 @@ import { useRecovery } from "./store";
 import { scheduleMedicationNotifications } from "./notifications";
 
 const navItems = [
-  { to: "/", icon: LayoutDashboard, label: "Dashboard" },
-  { to: "/documents", icon: FileText, label: "Documents" },
-  { to: "/health-log", icon: Activity, label: "Health Log" },
-  { to: "/medications", icon: Pill, label: "Medications" },
-  { to: "/recovery", icon: Heart, label: "Recovery Guide" },
-  { to: "/progress", icon: TrendingUp, label: "Progress" },
+  { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
+  { to: "/dashboard/documents", icon: FileText, label: "Documents" },
+  { to: "/dashboard/health-log", icon: Activity, label: "Health Log" },
+  { to: "/dashboard/medications", icon: Pill, label: "Medications" },
+  { to: "/dashboard/recovery", icon: Heart, label: "Recovery Guide" },
+  { to: "/dashboard/progress", icon: TrendingUp, label: "Progress" },
 ];
 
 export function Layout() {
@@ -70,7 +70,7 @@ export function Layout() {
             <NavLink
               key={item.to}
               to={item.to}
-              end={item.to === "/"}
+              end={item.to === "/dashboard"}
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${
                   isActive
@@ -178,7 +178,7 @@ export function Layout() {
                 <NavLink
                   key={item.to}
                   to={item.to}
-                  end={item.to === "/"}
+                  end={item.to === "/dashboard"}
                   onClick={() => setMobileOpen(false)}
                   className={({ isActive }) =>
                     `flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${

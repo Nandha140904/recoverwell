@@ -61,8 +61,19 @@ export async function initDB() {
       "surgeryDate" TEXT,
       "currentWeek" INTEGER DEFAULT 0,
       "overallProgress" INTEGER DEFAULT 0,
-      "riskLevel" TEXT DEFAULT 'low'
+      "riskLevel" TEXT DEFAULT 'low',
+      "recoveryGuidance" TEXT
     );
+  `);
+
+  // Migration for recoveryGuidance
+  await pool.query(`
+    DO $$ 
+    BEGIN 
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='recoveryGuidance') THEN
+        ALTER TABLE users ADD COLUMN "recoveryGuidance" TEXT;
+      END IF;
+    END $$;
   `);
 
   await pool.query(`
@@ -88,8 +99,19 @@ export async function initDB() {
       frequency TEXT,
       duration TEXT,
       instructions TEXT,
-      "isActive" INTEGER DEFAULT 1
+      "isActive" INTEGER DEFAULT 1,
+      "reminderTimes" TEXT
     );
+  `);
+
+  // Migration for reminderTimes
+  await pool.query(`
+    DO $$ 
+    BEGIN 
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='medications' AND column_name='reminderTimes') THEN
+        ALTER TABLE medications ADD COLUMN "reminderTimes" TEXT;
+      END IF;
+    END $$;
   `);
 
   await pool.query(`

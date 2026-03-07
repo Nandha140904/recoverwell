@@ -19,7 +19,7 @@ export function GuestGuard() {
   const { data } = useRecovery();
 
   if (data.userProfile?.isLoggedIn && data.userProfile?.hasUploadedDischarge) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/dashboard" replace />;
   }
 
   if (data.userProfile?.isLoggedIn && !data.userProfile?.hasUploadedDischarge) {
@@ -37,7 +37,7 @@ export function OnboardingGuard() {
   }
 
   if (data.userProfile?.hasUploadedDischarge) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/dashboard" replace />;
   }
 
   return <Outlet />;

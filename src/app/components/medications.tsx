@@ -12,7 +12,16 @@ import {
 } from "lucide-react";
 
 export function Medications() {
-  const { data, updateMedicationLog } = useRecovery();
+  const { data, updateMedicationLog, addMedications } = useRecovery();
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newMed, setNewMed] = useState({
+    name: "",
+    dosage: "",
+    frequency: "Twice daily",
+    duration: "",
+    instructions: "",
+    reminderTimes: "08:00, 20:00",
+  });
   const [notifPermission, setNotifPermission] = useState<NotificationPermission | "default">("default");
   
   // Update permission status on mount
@@ -93,6 +102,12 @@ export function Medications() {
             Track and manage your daily prescriptions.
           </p>
         </div>
+        <button
+          onClick={() => setShowAddModal(true)}
+          className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-[14px] font-medium hover:opacity-90 transition-opacity"
+        >
+          Add Medication
+        </button>
       </div>
 
       {notifPermission !== "granted" && (
@@ -188,6 +203,84 @@ export function Medications() {
               </div>
             </div>
           )}
+        </div>
+      )}
+      {/* Add Medication Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <div className="bg-card rounded-xl w-full max-w-md p-6 border border-border">
+            <h3 className="text-[16px] font-medium mb-4">Add Custom Medication</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="text-[12px] text-muted-foreground block mb-1">Name</label>
+                <input 
+                  type="text" 
+                  value={newMed.name}
+                  onChange={(e) => setNewMed({...newMed, name: e.target.value})}
+                  className="w-full px-3 py-2 rounded-lg border border-border bg-input-background text-[14px]"
+                  placeholder="e.g. Paracetamol"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[12px] text-muted-foreground block mb-1">Dosage</label>
+                  <input 
+                    type="text" 
+                    value={newMed.dosage}
+                    onChange={(e) => setNewMed({...newMed, dosage: e.target.value})}
+                    className="w-full px-3 py-2 rounded-lg border border-border bg-input-background text-[14px]"
+                    placeholder="e.g. 500mg"
+                  />
+                </div>
+                <div>
+                  <label className="text-[12px] text-muted-foreground block mb-1">Frequency</label>
+                  <input 
+                    type="text" 
+                    value={newMed.frequency}
+                    onChange={(e) => setNewMed({...newMed, frequency: e.target.value})}
+                    className="w-full px-3 py-2 rounded-lg border border-border bg-input-background text-[14px]"
+                    placeholder="e.g. Twice daily"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="text-[12px] text-muted-foreground block mb-1">Reminder Times (HH:mm, HH:mm...)</label>
+                <input 
+                  type="text" 
+                  value={newMed.reminderTimes}
+                  onChange={(e) => setNewMed({...newMed, reminderTimes: e.target.value})}
+                  className="w-full px-3 py-2 rounded-lg border border-border bg-input-background text-[14px]"
+                  placeholder="08:00, 20:00"
+                />
+              </div>
+              <div className="flex gap-3 mt-2">
+                <button 
+                  onClick={() => setShowAddModal(false)}
+                  className="flex-1 py-2 rounded-lg border border-border hover:bg-muted text-[14px]"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={() => {
+                    if (!newMed.name) return;
+                    addMedications([{
+                      name: newMed.name,
+                      dosage: newMed.dosage,
+                      frequency: newMed.frequency,
+                      duration: newMed.duration,
+                      instructions: newMed.instructions,
+                      reminderTimes: newMed.reminderTimes.split(",").map(t => t.trim()).filter(Boolean)
+                    }]);
+                    setShowAddModal(false);
+                    setNewMed({ name: "", dosage: "", frequency: "Twice daily", duration: "", instructions: "", reminderTimes: "08:00, 20:00" });
+                  }}
+                  className="flex-1 py-2 rounded-lg bg-primary text-primary-foreground font-medium text-[14px]"
+                >
+                  Save
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -191,7 +191,7 @@ export function SignIn() {
           });
 
           if (cloudData.userProfile.hasUploadedDischarge) {
-            navigate("/");
+            navigate("/dashboard");
           } else {
             navigate("/onboarding-upload");
           }

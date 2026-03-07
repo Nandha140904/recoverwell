@@ -9,32 +9,34 @@ import { Progress } from "./components/progress";
 import { SignIn } from "./components/sign-in";
 import { OnboardingUpload } from "./components/onboarding-upload";
 import { Medications } from "./components/medications";
+import { HomePage } from "./components/home-page";
 import { AuthGuard, GuestGuard, OnboardingGuard } from "./components/auth-guard";
 
 export const router = createBrowserRouter([
   {
     Component: AppShell,
     children: [
-      // Guest routes (sign-in)
+      // Guest routes
       {
         Component: GuestGuard,
         children: [
+          { index: true, Component: HomePage },
           { path: "sign-in", Component: SignIn },
         ],
       },
-      // Onboarding route (logged in but no discharge uploaded)
+      // Onboarding route
       {
         Component: OnboardingGuard,
         children: [
           { path: "onboarding-upload", Component: OnboardingUpload },
         ],
       },
-      // Protected routes (logged in + discharge uploaded)
+      // Protected routes
       {
         Component: AuthGuard,
         children: [
           {
-            path: "/",
+            path: "dashboard",
             Component: Layout,
             children: [
               { index: true, Component: Dashboard },

@@ -136,7 +136,7 @@ export function Dashboard() {
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-[15px]">Today's Reminders</h3>
             <Link
-              to="/medications"
+              to="/dashboard/medications"
               className="text-[12px] text-primary flex items-center gap-1 hover:underline"
             >
               Manage <ArrowRight className="w-3 h-3" />
@@ -221,7 +221,7 @@ export function Dashboard() {
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-[15px]">Recent Symptoms</h3>
             <Link
-              to="/health-log"
+              to="/dashboard/health-log"
               className="text-[12px] text-primary flex items-center gap-1 hover:underline"
             >
               View all <ArrowRight className="w-3 h-3" />

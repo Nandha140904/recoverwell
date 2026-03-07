@@ -26,8 +26,7 @@ import {
 
 // ── Gemini API integration ────────────────────────────────────────────────────
 // Free tier: 15 req/min, 1500 req/day — more than enough for discharge summary analysis.
-const GEMINI_API_KEY = "AIzaSyCsz2UyMtE3BclwmextQmnb3KXXy2a7O2w"; // ← replace with your key if needed
-
+const GEMINI_API_KEY = (import.meta as any).env?.VITE_GEMINI_API_KEY || "";
 const GEMINI_URL =
   `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
 
@@ -356,7 +355,7 @@ export function OnboardingUpload() {
     }
 
     markDischargeUploaded();
-    setTimeout(() => navigate("/"), 2500);
+    setTimeout(() => navigate("/dashboard"), 2500);
   };
 
   return (

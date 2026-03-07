@@ -16,8 +16,7 @@ import {
   Brain,
 } from "lucide-react";
 
-// ── Gemini API integration ────────────────────────────────────────────────────
-const GEMINI_API_KEY = "AIzaSyCsz2UyMtE3BclwmextQmnb3KXXy2a7O2w";
+const GEMINI_API_KEY = (import.meta as any).env?.VITE_GEMINI_API_KEY || "";
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
 
 interface GeminiDocAnalysis {
