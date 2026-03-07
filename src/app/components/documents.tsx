@@ -132,7 +132,7 @@ export function Documents() {
     try {
       const base64 = await fileToBase64(selectedFile);
       const mime = getGeminiMimeType(selectedFile);
-      
+
       const analysis = await analyseGeneralDocument(base64, mime, typeConfig[uploadType].label);
 
       if (!analysis) {
@@ -153,7 +153,7 @@ export function Documents() {
         addMedications(analysis.medications);
         if (Notification.permission === "granted") {
           // Schedule the newly updated comprehensive list (data.medications + the ones just returned but mocked mapped)
-          scheduleMedicationNotifications([...data.medications, ...analysis.medications.map((m,i) => ({...m, id: Date.now()+""+i, isActive: true}))]);
+          scheduleMedicationNotifications([...data.medications, ...analysis.medications.map((m, i) => ({ ...m, id: Date.now() + "" + i, isActive: true }))]);
         }
       }
 
@@ -201,11 +201,10 @@ export function Documents() {
           <button
             key={f.key}
             onClick={() => setFilter(f.key as typeof filter)}
-            className={`px-3 py-1.5 rounded-lg text-[13px] transition-colors ${
-              filter === f.key
-                ? "bg-primary text-primary-foreground"
-                : "bg-muted text-muted-foreground hover:bg-muted/80"
-            }`}
+            className={`px-3 py-1.5 rounded-lg text-[13px] transition-colors ${filter === f.key
+              ? "bg-primary text-primary-foreground"
+              : "bg-muted text-muted-foreground hover:bg-muted/80"
+              }`}
           >
             {f.label}
           </button>
@@ -240,11 +239,10 @@ export function Documents() {
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <span
-                    className={`text-[11px] px-2 py-0.5 rounded flex items-center gap-1 ${
-                      doc.status === "analyzed"
-                        ? "bg-emerald-50 text-emerald-600"
-                        : "bg-amber-50 text-amber-600"
-                    }`}
+                    className={`text-[11px] px-2 py-0.5 rounded flex items-center gap-1 ${doc.status === "analyzed"
+                      ? "bg-emerald-50 text-emerald-600"
+                      : "bg-amber-50 text-amber-600"
+                      }`}
                   >
                     {doc.status === "analyzed" && <Brain className="w-3 h-3" />}
                     {doc.status === "analyzed" ? "AI Analyzed" : "Processing"}
@@ -352,13 +350,12 @@ export function Documents() {
                 onDragLeave={() => setDragOver(false)}
                 onDrop={handleDrop}
                 onClick={() => !uploading && fileInputRef.current?.click()}
-                className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors cursor-pointer ${
-                  dragOver
-                    ? "border-primary bg-primary/5"
-                    : selectedFile
+                className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors cursor-pointer ${dragOver
+                  ? "border-primary bg-primary/5"
+                  : selectedFile
                     ? "border-emerald-500/50 bg-emerald-500/5"
                     : "border-border hover:border-primary/50 hover:bg-muted/30"
-                } ${uploading ? "opacity-50 pointer-events-none" : ""}`}
+                  } ${uploading ? "opacity-50 pointer-events-none" : ""}`}
               >
                 {selectedFile ? (
                   <>
