@@ -259,6 +259,7 @@ export function OnboardingUpload() {
         duration: m.duration ?? "",
         instructions: m.instructions ?? "",
         isActive: true,
+        status: "active",
         reminderTimes: m.reminderTimes && m.reminderTimes.length > 0 ? m.reminderTimes : undefined,
       }));
 
@@ -319,6 +320,7 @@ export function OnboardingUpload() {
       reminderTimes: times,
       instructions: newMed.instructions || "",
       isActive: true,
+      status: "active",
     };
 
     setMedications((prev) => [...prev, med]);

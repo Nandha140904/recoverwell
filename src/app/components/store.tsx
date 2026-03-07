@@ -31,6 +31,9 @@ export interface Medication {
   duration: string;
   instructions: string;
   isActive: boolean;
+  startDate?: string;
+  endDate?: string;
+  status: "active" | "paused" | "stopped" | "completed";
   reminderTimes?: string[];
 }
 
@@ -71,8 +74,9 @@ interface RecoveryContextType {
   data: RecoveryData;
   addHealthEntry: (entry: Omit<HealthEntry, "id">) => void;
   addDocument: (doc: Omit<MedicalDocument, "id">) => void;
-  addMedications: (meds: Omit<Medication, "id" | "isActive">[]) => void;
+  addMedications: (meds: (Omit<Medication, "id" | "isActive" | "status"> & { isActive?: boolean, status?: Medication["status"]})[]) => void;
   updateMedicationLog: (medicationId: string, date: string, time: string, status: "taken" | "skipped") => void;
+  updateMedicationStatus: (id: string, status: Medication["status"]) => void;
   updateRecoveryData: (updates: Partial<RecoveryData>) => void;
   setUserProfile: (profile: UserProfile) => void;
   loginAs: (profile: UserProfile) => void;
@@ -164,12 +168,13 @@ export function RecoveryProvider({ children }: { children: React.ReactNode }) {
     }));
   };
 
-  const addMedications = (meds: Omit<Medication, "id" | "isActive">[]) => {
+  const addMedications = (meds: (Omit<Medication, "id" | "isActive" | "status"> & { isActive?: boolean, status?: Medication["status"]})[]) => {
     setData((prev) => {
       const newMeds = meds.map((m, i) => ({
         ...m,
         id: `${Date.now()}-${i}`,
-        isActive: true,
+        isActive: m.isActive ?? true,
+        status: m.status ?? ("active" as const),
       }));
       return { ...prev, medications: [...prev.medications, ...newMeds] };
     });
@@ -221,7 +226,16 @@ export function RecoveryProvider({ children }: { children: React.ReactNode }) {
   const deactivateMedication = (id: string) => {
     setData((prev) => ({
       ...prev,
-      medications: prev.medications.map(m => m.id === id ? { ...m, isActive: false } : m)
+      medications: prev.medications.map(m => m.id === id ? { ...m, isActive: false, status: "stopped" as const } : m)
+    }));
+  };
+
+  const updateMedicationStatus = (id: string, status: Medication["status"]) => {
+    setData((prev) => ({
+      ...prev,
+      medications: prev.medications.map(m => 
+        m.id === id ? { ...m, status, isActive: status === "active" } : m
+      )
     }));
   };
 
@@ -244,7 +258,7 @@ export function RecoveryProvider({ children }: { children: React.ReactNode }) {
     <RecoveryContext.Provider value={{
       data, addHealthEntry, addDocument, addMedications, updateMedicationLog, updateRecoveryData,
       setUserProfile, loginAs, markDischargeUploaded, logout, applyCloudSync,
-      deactivateMedication, deleteMedication
+      deactivateMedication, deleteMedication, updateMedicationStatus
     }}>
       {children}
     </RecoveryContext.Provider>

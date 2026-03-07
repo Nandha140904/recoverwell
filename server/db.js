@@ -100,16 +100,28 @@ export async function initDB() {
       duration TEXT,
       instructions TEXT,
       "isActive" INTEGER DEFAULT 1,
-      "reminderTimes" TEXT
+      "reminderTimes" TEXT,
+      "status" TEXT DEFAULT 'active',
+      "startDate" TEXT,
+      "endDate" TEXT
     );
   `);
 
-  // Migration for reminderTimes
+  // Migration for new medication columns
   await pool.query(`
     DO $$ 
     BEGIN 
       IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='medications' AND column_name='reminderTimes') THEN
         ALTER TABLE medications ADD COLUMN "reminderTimes" TEXT;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='medications' AND column_name='status') THEN
+        ALTER TABLE medications ADD COLUMN "status" TEXT DEFAULT 'active';
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='medications' AND column_name='startDate') THEN
+        ALTER TABLE medications ADD COLUMN "startDate" TEXT;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='medications' AND column_name='endDate') THEN
+        ALTER TABLE medications ADD COLUMN "endDate" TEXT;
       END IF;
     END $$;
   `);

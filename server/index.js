@@ -135,7 +135,10 @@ app.post("/api/pull", async (req, res) => {
     const parsedMedications = medications.map(m => ({
       ...m,
       isActive: m.isActive === 1,
-      reminderTimes: m.reminderTimes ? JSON.parse(m.reminderTimes) : []
+      reminderTimes: m.reminderTimes ? JSON.parse(m.reminderTimes) : [],
+      status: m.status || 'active',
+      startDate: m.startDate || null,
+      endDate: m.endDate || null
     }));
 
     // Reconstruct
@@ -228,12 +231,13 @@ app.post("/api/sync", async (req, res) => {
     // Insert Medications
     for (const m of (data.medications || [])) {
       await client.query(
-        `INSERT INTO medications (id, mobile, name, dosage, frequency, duration, instructions, "isActive", "reminderTimes") 
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        `INSERT INTO medications (id, mobile, name, dosage, frequency, duration, instructions, "isActive", "reminderTimes", "status", "startDate", "endDate") 
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
         [
           m.id, mobile, m.name, m.dosage, m.frequency, m.duration, 
           m.instructions, m.isActive ? 1 : 0,
-          m.reminderTimes ? JSON.stringify(m.reminderTimes) : null
+          m.reminderTimes ? JSON.stringify(m.reminderTimes) : null,
+          m.status || 'active', m.startDate || null, m.endDate || null
         ]
       );
     }
