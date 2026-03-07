@@ -29,7 +29,7 @@ async function analyseGeneralDocument(
   docType: string
 ): Promise<GeminiDocAnalysis | null> {
   try {
-    const res = await fetch("/api/analyse-general", {
+    const res = await fetch("/.netlify/functions/analyse-general", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ fileBase64, mimeType, docType }),
