@@ -1,4 +1,4 @@
-const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
+const fetch = require('node-fetch');
 
 exports.handler = async (event, context) => {
   // Only allow POST requests
@@ -58,6 +58,7 @@ User Question: ${prompt}
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
+      console.error("Gemini API error details:", JSON.stringify(errorData, null, 2));
       return {
         statusCode: response.status,
         body: JSON.stringify({ error: errorData?.error?.message || "Failed to get response from AI." }),

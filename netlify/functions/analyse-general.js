@@ -1,3 +1,5 @@
+const fetch = require('node-fetch');
+
 exports.handler = async (event, context) => {
   if (event.httpMethod !== "POST") {
     return { statusCode: 405, body: JSON.stringify({ error: "Method Not Allowed" }) };
@@ -53,6 +55,7 @@ Rules:
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
+      console.error("Gemini API error details (Analyse General):", JSON.stringify(errorData, null, 2));
       return { statusCode: response.status, body: JSON.stringify({ error: errorData?.error?.message || "AI Analysis failed" }) };
     }
 
