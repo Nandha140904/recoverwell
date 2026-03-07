@@ -16,9 +16,6 @@ import {
   Brain,
 } from "lucide-react";
 
-const GEMINI_API_KEY = (import.meta as any).env?.VITE_GEMINI_API_KEY || "";
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
-
 interface GeminiDocAnalysis {
   summary: string;
   keyFindings: string[];
@@ -31,69 +28,25 @@ async function analyseGeneralDocument(
   mimeType: string,
   docType: string
 ): Promise<GeminiDocAnalysis | null> {
-  const prompt = `You are an expert medical AI assistant. Analyze this ${docType} document.
-
-Extract the medical information and return ONLY a valid JSON object in this exact format:
-{
-  "summary": "1-2 sentence medical summary of what this document is about.",
-  "keyFindings": ["Finding 1", "Finding 2", "Finding 3"],
-  "simplifiedExplanation": "A simple, patient-friendly explanation of what the results mean, avoiding overly complex medical jargon.",
-  "medications": [
-    {
-      "name": "Medication name",
-      "dosage": "e.g. 500mg",
-      "frequency": "e.g. Twice daily / Once daily",
-      "duration": "e.g. 5 days",
-      "instructions": "e.g. Take after food"
-    }
-  ]
-}
-
-Rules:
-- Include all medications found. If none, pass an empty array [].
-- Return ONLY the JSON object, absolutely NO markdown formatting or other text.
-- If it's hard to read, do your best to extract key points.`;
-
-  const body = {
-    contents: [
-      {
-        parts: [
-          { inline_data: { mime_type: mimeType, data: fileBase64 } },
-          { text: prompt },
-        ],
-      },
-    ],
-    generationConfig: { temperature: 0.2, maxOutputTokens: 2048 },
-  };
-
   try {
-    const res = await fetch(GEMINI_URL, {
+    const res = await fetch("/api/analyse-general", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ fileBase64, mimeType, docType }),
     });
 
     if (!res.ok) {
-      const errResponse = await res.json().catch(() => ({}));
-      if (errResponse?.error?.message?.includes("API key")) {
+      const errData = await res.json().catch(() => ({}));
+      if (errData?.error?.includes("API key")) {
         throw new Error("INVALID_API_KEY");
       }
+      console.error("General Analysis API error:", res.status, errData);
       return null;
     }
 
-    const data = await res.json();
-    const text: string = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-    
-    // Safely extract JSON object from the text response
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      console.error("No JSON block found in response:", text);
-      return null;
-    }
-    
-    return JSON.parse(jsonMatch[0]);
+    return await res.json();
   } catch (err) {
-    console.error("Gemini Parse Error:", err);
+    console.error("Gemini General Analyse Error:", err);
     return null;
   }
 }

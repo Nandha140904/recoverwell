@@ -28,12 +28,6 @@ import {
   Brain,
 } from "lucide-react";
 
-// ── Gemini API integration ────────────────────────────────────────────────────
-// Free tier: 15 req/min, 1500 req/day — more than enough for discharge summary analysis.
-const GEMINI_API_KEY = (import.meta as any).env?.VITE_GEMINI_API_KEY || "";
-const GEMINI_URL =
-  `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
-
 interface GeminiMed {
   name: string;
   dosage: string;
@@ -45,7 +39,7 @@ interface GeminiMed {
 
 interface GeminiAnalysis {
   medications: GeminiMed[];
-  recoveryGuidance: string; // Markdown formatted advice
+  recoveryGuidance: string; 
 }
 
 async function analyseWithGemini(
@@ -53,93 +47,26 @@ async function analyseWithGemini(
   mimeType: string,
   extraText?: string
 ): Promise<GeminiAnalysis> {
-  const prompt = `You are a clinical pharmacist and recovery specialist AI. 
-CRITICAL: Scan EVERY SINGLE PAGE of this document. Do not miss any hidden sections or late-page medication lists.
-
-Tasks:
-1. Extract ALL medications listed.
-2. Generate comprehensive, personalized recovery guidance based on the diagnosis, surgery, and specific patient details found.
-
-Return ONLY a valid JSON object (no markdown, no explanation) in this exact format:
-{
-  "medications": [
-    {
-      "name": "Medication name",
-      "dosage": "e.g. 500mg",
-      "frequency": "e.g. Twice daily",
-      "duration": "e.g. 5 days",
-      "instructions": "e.g. Take after food",
-      "reminderTimes": ["08:00", "20:00"] 
-    }
-  ],
-  "recoveryGuidance": "Markdown formatted recovery advice including: Diet (specific to surgery), Hydration, Exercise limits, Wound care, and Warning signs."
-}
-
-Rules for Medications:
-- Include tablets, injections, syrups, etc.
-- Normalize frequency (BD -> Twice daily, etc.).
-- Convert 'reminderTimes' to HH:mm (24h) if mentioned, otherwise provide logical defaults based on frequency (e.g. Twice daily -> ["09:00", "21:00"]).
-
-Rules for Recovery Guidance:
-- Use Markdown headers (###).
-- Be specific to the surgery mentioned (e.g. Knee Replacement needs different exercises than Appendectomy).
-- Include specific dietary restrictions if mentioned.
-
-If no data is found, return empty fields.`;
-
-  const body = {
-    contents: [
-      {
-        parts: [
-          {
-            inline_data: {
-              mime_type: mimeType,
-              data: fileBase64,
-            },
-          },
-          { text: extraText ? `EXTRACTED TEXT FROM PDF:\n${extraText}\n\n${prompt}` : prompt },
-        ],
-      },
-    ],
-    generationConfig: {
-      temperature: 0.1,
-      maxOutputTokens: 2048,
-    },
-  };
-
-  const res = await fetch(GEMINI_URL, {
+  const res = await fetch("/api/analyse", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ fileBase64, mimeType, extraText }),
   });
 
   if (!res.ok) {
-    const errResponse = await res.json().catch(() => ({}));
-    if (errResponse?.error?.message?.includes("API key")) {
+    const errData = await res.json().catch(() => ({}));
+    if (errData?.error?.includes("API key")) {
       throw new Error("INVALID_API_KEY");
     }
-    console.error("Gemini API error:", res.status, errResponse);
-    return { medications: [], recoveryGuidance: "" };
+    console.error("Analysis API error:", res.status, errData);
+    throw new Error(errData.error || "AI Analysis failed");
   }
 
   const data = await res.json();
-  const text: string = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-
-  try {
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      console.warn("No JSON object found in response:", text);
-      return { medications: [], recoveryGuidance: "" };
-    }
-    const parsed = JSON.parse(jsonMatch[0]);
-    return {
-      medications: Array.isArray(parsed.medications) ? parsed.medications : [],
-      recoveryGuidance: parsed.recoveryGuidance || "",
-    };
-  } catch {
-    console.warn("Gemini response parse error. Raw text:", text);
-    return { medications: [], recoveryGuidance: "" };
-  }
+  return {
+    medications: Array.isArray(data.medications) ? data.medications : [],
+    recoveryGuidance: data.recoveryGuidance || "",
+  };
 }
 
 // ── File helpers ──────────────────────────────────────────────────────────────

@@ -25,15 +25,12 @@ export function RecoveryChatbot() {
     }
   }, [messages, loading]);
 
-  const GEMINI_API_KEY = (import.meta as any).env?.VITE_GEMINI_API_KEY || "";
-  const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
-
   const sendMessage = async () => {
     if (!input.trim() || loading) return;
 
-    const userMsg = input.trim();
+    const currentInput = input.trim();
     setInput("");
-    setMessages((prev) => [...prev, { role: "user", content: userMsg }]);
+    setMessages((prev) => [...prev, { role: "user", content: currentInput }]);
     setLoading(true);
 
     // Build context from clinical data
@@ -42,51 +39,34 @@ export function RecoveryChatbot() {
       .map(m => `- ${m.name} (${m.dosage}): ${m.frequency}`)
       .join("\n");
       
-    const contextLines = [
+    const context = [
       `Patient Name: ${data.userProfile?.name}`,
       `Surgery: ${data.surgeryType}`,
       `Surgery Date: ${data.surgeryDate}`,
       `Recovery Guidance: ${data.recoveryGuidance || "Not specified"}`,
       `Current Medications:\n${medicationsList || "None listed"}`,
-    ];
-
-    const systemPrompt = `You are a helpful, professional medical recovery assistant chatbot for a platform called RecoverWell.
-Your goal is to provide personalized recovery advice based ONLY on the patient's discharge information and safe medical practices.
-
-CONTEXT:
-${contextLines.join("\n")}
-
-RULES:
-1. Be encouraging, empathetic, and clear.
-2. If a patient asks for medical advice that requires a doctor (e.g., severe pain, signs of infection), strongly advise them to contact their surgeon (Dr. ${data.userProfile?.doctorName || "their doctor"}) or emergency services immediately.
-3. Keep answers concise and patient-friendly.
-4. Use the provided context to answer specific questions about their recovery plan.
-5. If you don't know the answer or it's not in the summary, be honest and suggest checking with their medical team.
-6. DO NOT provide prescriptions, diagnosis of new conditions, or unsafe medical advice.
-7. Use Markdown for formatting (bold, lists).
-
-User Question: ${userMsg}
-`;
+    ].join("\n");
 
     try {
-      const res = await fetch(GEMINI_URL, {
+      const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: systemPrompt }] }],
-          generationConfig: { temperature: 0.7, maxOutputTokens: 500 },
-        }),
+        body: JSON.stringify({ prompt: currentInput, context }),
       });
 
-      if (!res.ok) throw new Error("API Limit reached or error occurred.");
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "The AI assistant is temporarily unavailable.");
+      }
       
       const resData = await res.json();
-      const botResponse = resData?.candidates?.[0]?.content?.parts?.[0]?.text || "I'm sorry, I'm having trouble connecting right now. Please try again in a moment.";
-
-      setMessages((prev) => [...prev, { role: "bot", content: botResponse }]);
-    } catch (err) {
+      setMessages((prev) => [...prev, { role: "bot", content: resData.text }]);
+    } catch (err: any) {
       console.error(err);
-      setMessages((prev) => [...prev, { role: "bot", content: "I encountered an error. Please check your internet connection and try again." }]);
+      setMessages((prev) => [...prev, { 
+        role: "bot", 
+        content: `**Error:** ${err.message}. Please try again later or contact support if the issue persists.` 
+      }]);
     } finally {
       setLoading(false);
     }
