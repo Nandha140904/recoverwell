@@ -12,7 +12,9 @@ import {
   Heart,
   Brain,
   Sparkles,
+  MessageSquare,
 } from "lucide-react";
+import { RecoveryChatbot } from "./recovery-chatbot";
 
 interface GuideSection {
   id: string;
@@ -24,9 +26,16 @@ interface GuideSection {
 
 export function RecoveryGuide() {
   const { data } = useRecovery();
-  const [activeSection, setActiveSection] = useState(data.recoveryGuidance ? "ai-plan" : "diet");
+  const [activeSection, setActiveSection] = useState("chatbot");
 
   const sections: GuideSection[] = [
+    {
+      id: "chatbot",
+      title: "AI Recovery Assistant",
+      icon: <Sparkles className="w-5 h-5" />,
+      color: "text-primary bg-primary/10",
+      items: [],
+    },
     {
       id: "diet",
       title: "Dietary Recommendations",
@@ -347,7 +356,9 @@ export function RecoveryGuide() {
           </div>
 
           <div className="space-y-4">
-            {active.id === "ai-plan" && data.recoveryGuidance ? (
+            {active.id === "chatbot" ? (
+              <RecoveryChatbot />
+            ) : active.id === "ai-plan" && data.recoveryGuidance ? (
               <div className="prose prose-sm max-w-none">
                 <div className="bg-indigo-50/50 border border-indigo-100 rounded-xl p-6">
                   <div className="flex items-center gap-2 mb-4">

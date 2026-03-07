@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
+import React, { createContext, useContext, useState, useEffect } from "react";
 import { fetchWithTimeout } from "../lib/api";
 
 export interface UserProfile {
@@ -17,21 +17,10 @@ export interface HealthEntry {
   date: string;
   temperature: number;
   weight: number;
-  painLevel: number;
+  painLevel: number; // 0-10
   symptoms: string[];
   notes: string;
   mood: "great" | "good" | "okay" | "poor" | "bad";
-}
-
-export interface MedicalDocument {
-  id: string;
-  name: string;
-  type: "discharge" | "lab" | "prescription" | "radiology";
-  uploadDate: string;
-  summary: string;
-  keyFindings: string[];
-  simplifiedExplanation: string;
-  status: "analyzed" | "processing";
 }
 
 export interface Medication {
@@ -40,9 +29,9 @@ export interface Medication {
   dosage: string;
   frequency: string;
   duration: string;
-  instructions?: string;
+  instructions: string;
   isActive: boolean;
-  reminderTimes?: string[]; // Custom hours (HH:mm)
+  reminderTimes?: string[];
 }
 
 export interface MedicationLog {
@@ -50,35 +39,33 @@ export interface MedicationLog {
   medicationId: string;
   date: string; // YYYY-MM-DD
   time: string; // HH:mm
-  takenAt: string | null; // ISO string if taken
+  takenAt: string | null;
+}
+
+export interface MedicalDocument {
+  id: string;
+  name: string;
+  type: "discharge" | "lab" | "prescription" | "other";
+  uploadDate: string;
+  summary: string;
+  keyFindings: string[];
+  simplifiedExplanation: string;
+  status: "analyzed" | "processing" | "failed";
 }
 
 export interface RecoveryData {
   surgeryType: string;
   surgeryDate: string;
   currentWeek: number;
-  overallProgress: number;
+  overallProgress: number; // 0-100
   riskLevel: "low" | "moderate" | "high";
   healthEntries: HealthEntry[];
   documents: MedicalDocument[];
   medications: Medication[];
   medicationLogs: MedicationLog[];
   userProfile: UserProfile | null;
-  recoveryGuidance?: string; // AI generated markdown or JSON
+  recoveryGuidance?: string;
 }
-
-const defaultRecoveryData: RecoveryData = {
-  surgeryType: "",
-  surgeryDate: "",
-  currentWeek: 0,
-  overallProgress: 0,
-  riskLevel: "low",
-  healthEntries: [],
-  documents: [],
-  medications: [],
-  medicationLogs: [],
-  userProfile: null,
-};
 
 interface RecoveryContextType {
   data: RecoveryData;
@@ -90,20 +77,33 @@ interface RecoveryContextType {
   setUserProfile: (profile: UserProfile) => void;
   loginAs: (profile: UserProfile) => void;
   markDischargeUploaded: () => void;
+  deactivateMedication: (id: string) => void;
+  deleteMedication: (id: string) => void;
   logout: () => void;
   applyCloudSync: (fullData: RecoveryData) => void;
 }
 
-const RecoveryContext = createContext<RecoveryContextType | null>(null);
+const RecoveryContext = createContext<RecoveryContextType | undefined>(undefined);
 
-// Bump this version whenever we need to wipe stale localStorage data.
-const DATA_VERSION = "4";
+const DATA_VERSION = "1.0.2";
+const SYNC_DEBOUNCE_MS = 2000;
 
-export function RecoveryProvider({ children }: { children: ReactNode }) {
+const defaultRecoveryData: RecoveryData = {
+  surgeryType: "Total Knee Replacement",
+  surgeryDate: "2024-03-01",
+  currentWeek: 2,
+  overallProgress: 35,
+  riskLevel: "low",
+  healthEntries: [],
+  documents: [],
+  medications: [],
+  medicationLogs: [],
+  userProfile: null,
+};
+
+export function RecoveryProvider({ children }: { children: React.ReactNode }) {
   const [data, setData] = useState<RecoveryData>(() => {
     try {
-      // If the stored version doesn't match, reset to defaults so old dummy
-      // data doesn't bypass the sign-in / onboarding flow.
       const storedVersion = localStorage.getItem("recoveryDataVersion");
       if (storedVersion !== DATA_VERSION) {
         localStorage.removeItem("recoveryData");
@@ -117,22 +117,27 @@ export function RecoveryProvider({ children }: { children: ReactNode }) {
     }
   });
 
+  // Debounced Sync Effect
   useEffect(() => {
     localStorage.setItem("recoveryData", JSON.stringify(data));
     localStorage.setItem("recoveryDataVersion", DATA_VERSION);
 
-    // Auto-sync non-empty profiles to the server
-    if (data.userProfile?.mobile) {
-      fetchWithTimeout(
-        "/api/sync",
-        {
+    if (!data.userProfile?.isLoggedIn || !data.userProfile?.mobile) return;
+
+    const timer = setTimeout(async () => {
+      try {
+        await fetchWithTimeout("/api/sync", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(data),
-        },
-        5000
-      ).catch((error) => console.log("Cloud sync skipped", error));
-    }
+        }, 8000);
+        console.log("[Cloud] State synced successfully");
+      } catch (err) {
+        console.warn("[Cloud] Sync skipped or failed:", err);
+      }
+    }, SYNC_DEBOUNCE_MS);
+
+    return () => clearTimeout(timer);
   }, [data]);
 
   const applyCloudSync = (fullData: RecoveryData) => {
@@ -176,15 +181,15 @@ export function RecoveryProvider({ children }: { children: ReactNode }) {
         (l) => l.medicationId === medicationId && l.date === date && l.time === time
       );
 
-      const logs = [...prev.medicationLogs];
+      const updatedLogs = [...prev.medicationLogs];
       if (existingLogIndex >= 0) {
-        logs[existingLogIndex] = {
-          ...logs[existingLogIndex],
+        updatedLogs[existingLogIndex] = {
+          ...updatedLogs[existingLogIndex],
           takenAt: status === "taken" ? new Date().toISOString() : null,
         };
       } else {
-        logs.push({
-          id: `${Date.now()}-${Math.random()}`,
+        updatedLogs.push({
+          id: Date.now().toString(),
           medicationId,
           date,
           time,
@@ -192,7 +197,7 @@ export function RecoveryProvider({ children }: { children: ReactNode }) {
         });
       }
 
-      return { ...prev, medicationLogs: logs };
+      return { ...prev, medicationLogs: updatedLogs };
     });
   };
 
@@ -212,6 +217,20 @@ export function RecoveryProvider({ children }: { children: ReactNode }) {
         : null,
     }));
   };
+  
+  const deactivateMedication = (id: string) => {
+    setData((prev) => ({
+      ...prev,
+      medications: prev.medications.map(m => m.id === id ? { ...m, isActive: false } : m)
+    }));
+  };
+
+  const deleteMedication = (id: string) => {
+    setData((prev) => ({
+      ...prev,
+      medications: prev.medications.filter(m => m.id !== id)
+    }));
+  };
 
   const loginAs = (profile: UserProfile) => {
     setData((prev) => ({ ...prev, userProfile: { ...profile, isLoggedIn: true } }));
@@ -224,7 +243,8 @@ export function RecoveryProvider({ children }: { children: ReactNode }) {
   return (
     <RecoveryContext.Provider value={{
       data, addHealthEntry, addDocument, addMedications, updateMedicationLog, updateRecoveryData,
-      setUserProfile, loginAs, markDischargeUploaded, logout, applyCloudSync
+      setUserProfile, loginAs, markDischargeUploaded, logout, applyCloudSync,
+      deactivateMedication, deleteMedication
     }}>
       {children}
     </RecoveryContext.Provider>

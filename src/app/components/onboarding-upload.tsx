@@ -1,5 +1,9 @@
 import { useState, useRef } from "react";
 import { useNavigate } from "react-router";
+import * as pdfjsLib from "pdfjs-dist";
+
+// Fix for PDF.js worker
+pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
 import { useRecovery, type Medication } from "./store";
 import {
   requestNotificationPermission,
@@ -46,7 +50,8 @@ interface GeminiAnalysis {
 
 async function analyseWithGemini(
   fileBase64: string,
-  mimeType: string
+  mimeType: string,
+  extraText?: string
 ): Promise<GeminiAnalysis> {
   const prompt = `You are a clinical pharmacist and recovery specialist AI. 
 CRITICAL: Scan EVERY SINGLE PAGE of this document. Do not miss any hidden sections or late-page medication lists.
@@ -92,7 +97,7 @@ If no data is found, return empty fields.`;
               data: fileBase64,
             },
           },
-          { text: prompt },
+          { text: extraText ? `EXTRACTED TEXT FROM PDF:\n${extraText}\n\n${prompt}` : prompt },
         ],
       },
     ],
@@ -185,6 +190,7 @@ export function OnboardingUpload() {
     dosage: "", 
     frequency: "", 
     duration: "", 
+    instructions: "",
     reminderTimes: "" // Comma separated string for UI
   });
   const [newMedErrors, setNewMedErrors] = useState<Record<string, string>>({});
@@ -221,9 +227,26 @@ export function OnboardingUpload() {
     try {
       const base64 = await fileToBase64(file);
       const mimeType = getGeminiMimeType(file);
+      
+      let extraText = "";
+      if (mimeType === "application/pdf") {
+        try {
+          const arrayBuffer = await file.arrayBuffer();
+          const pdfHost = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+          let text = "";
+          for (let i = 1; i <= pdfHost.numPages; i++) {
+            const page = await pdfHost.getPage(i);
+            const content = await page.getTextContent();
+            text += content.items.map((item: any) => item.str).join(" ") + "\n";
+          }
+          extraText = text;
+        } catch (e) {
+          console.warn("PDF text extraction failed:", e);
+        }
+      }
 
       setAnalysisStage(2);
-      const raw = await analyseWithGemini(base64, mimeType);
+      const raw = await analyseWithGemini(base64, mimeType, extraText);
 
       setAnalysisStage(3);
       await delay(500);
@@ -294,11 +317,12 @@ export function OnboardingUpload() {
       frequency: newMed.frequency,
       duration: newMed.duration,
       reminderTimes: times,
+      instructions: newMed.instructions || "",
       isActive: true,
     };
 
     setMedications((prev) => [...prev, med]);
-    setNewMed({ name: "", dosage: "", frequency: "", duration: "", reminderTimes: "" });
+    setNewMed({ name: "", dosage: "", frequency: "", duration: "", instructions: "", reminderTimes: "" });
     setNewMedErrors({});
     setShowAddMed(false);
   };

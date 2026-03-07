@@ -123,6 +123,7 @@ const typeConfig = {
   lab: { icon: FlaskConical, color: "text-purple-600 bg-purple-50", label: "Lab Report" },
   prescription: { icon: Pill, color: "text-emerald-600 bg-emerald-50", label: "Prescription" },
   radiology: { icon: Scan, color: "text-amber-600 bg-amber-50", label: "Radiology Report" },
+  other: { icon: FileText, color: "text-slate-600 bg-slate-50", label: "General Document" },
 };
 
 export function Documents() {
