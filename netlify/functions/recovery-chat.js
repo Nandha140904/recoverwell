@@ -1,7 +1,4 @@
-const fetch = require('node-fetch');
-
-exports.handler = async (event, context) => {
-  // Only allow POST requests
+export const handler = async (event, context) => {
   if (event.httpMethod !== "POST") {
     return {
       statusCode: 405,

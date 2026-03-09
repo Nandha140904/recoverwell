@@ -1,4 +1,5 @@
-const { Pool } = require('pg');
+import pkg from 'pg';
+const { Pool } = pkg;
 
 let pool;
 
@@ -21,7 +22,7 @@ function getPool() {
   return pool;
 }
 
-exports.handler = async (event, context) => {
+export const handler = async (event, context) => {
   if (event.httpMethod !== "POST") {
     return { statusCode: 405, body: JSON.stringify({ error: "Method Not Allowed" }) };
   }
@@ -51,7 +52,6 @@ exports.handler = async (event, context) => {
     const logsRes = await db.query('SELECT * FROM "medicationLogs" WHERE mobile = $1', [mobile]);
     const medicationLogs = logsRes.rows;
 
-    // Parse specific fields back to arrays
     const parsedDocuments = documents.map(d => ({
       ...d,
       keyFindings: d.keyFindings ? JSON.parse(d.keyFindings) : []

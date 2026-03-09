@@ -3,12 +3,6 @@
   command = "npm run build"
   functions = "netlify/functions"
 
-# SPA Routing: Redirect all requests to index.html except for functions
-[[redirects]]
-  from = "/.netlify/functions/*"
-  to = "/.netlify/functions/:splat"
-  status = 200
-
 [[redirects]]
   from = "/*"
   to = "/index.html"
