@@ -7,6 +7,7 @@ function getPool() {
 
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
+    console.error("DEBUG: DATABASE_URL is missing in process.env.");
     throw new Error("DATABASE_URL must be provided in environment variables");
   }
 

@@ -9,11 +9,12 @@ exports.handler = async (event, context) => {
     };
   }
 
-  const apiKey = process.env.VITE_GEMINI_API_KEY;
+  const apiKey = process.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
   if (!apiKey) {
+    console.error("DEBUG: Gemini API Key is missing in process.env.");
     return {
       statusCode: 500,
-      body: JSON.stringify({ error: "Gemini API key not configured on server." }),
+      body: JSON.stringify({ error: "Gemini API key not configured on your Netlify dashboard. Add VITE_GEMINI_API_KEY and Re-deploy." }),
     };
   }
 

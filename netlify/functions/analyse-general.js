@@ -5,9 +5,10 @@ exports.handler = async (event, context) => {
     return { statusCode: 405, body: JSON.stringify({ error: "Method Not Allowed" }) };
   }
 
-  const apiKey = process.env.VITE_GEMINI_API_KEY;
+  const apiKey = process.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    return { statusCode: 500, body: JSON.stringify({ error: "Gemini API key not configured" }) };
+    console.error("DEBUG: Gemini API Key is missing in process.env. Keys available:", Object.keys(process.env).filter(k => k.includes("API") || k.includes("KEY")));
+    return { statusCode: 500, body: JSON.stringify({ error: "Gemini API key not configured on Netlify. Please check your Environment Variables and RE-DEPLOY." }) };
   }
 
   try {
