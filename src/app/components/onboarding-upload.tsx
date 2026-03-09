@@ -3,7 +3,7 @@ import { useNavigate } from "react-router";
 import * as pdfjsLib from "pdfjs-dist";
 
 // Fix for PDF.js worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 import { useRecovery, type Medication } from "./store";
 import {
   requestNotificationPermission,

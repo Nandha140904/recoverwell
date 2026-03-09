@@ -279,9 +279,9 @@ app.post("/api/chat", async (req, res) => {
   }
 
   try {
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
     
-    // We use gemini-1.5-flash as the standard reliable model for chatbots
+    // We use gemini-2.0-flash as the current available model for chatbots
     const systemPrompt = `You are a helpful, professional medical recovery assistant chatbot for a platform called RecoverWell.
 Your goal is to provide personalized recovery advice based ONLY on the patient's discharge information and safe medical practices.
 
@@ -352,7 +352,7 @@ app.post("/api/analyse", async (req, res) => {
   }
 
   try {
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
     
     const prompt = `You are a clinical pharmacist and recovery specialist AI. 
 CRITICAL: Scan EVERY SINGLE PAGE of this document. Do not miss any hidden sections or late-page medication lists.
@@ -446,7 +446,7 @@ app.post("/api/analyse-general", async (req, res) => {
   }
 
   try {
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
     
     const prompt = `You are an expert medical AI assistant. Analyze this ${docType} document.
 
@@ -508,6 +508,33 @@ Rules:
     console.error("General Analyse Exception:", err);
     res.status(500).json({ error: "Internal server error during document analysis." });
   }
+});
+
+// ── Local Dev Proxy: /api/fn/* routes mirror Netlify functions ───────────────
+// Vite rewrites /.netlify/functions/X → /api/fn/X during local development
+app.post("/api/fn/recovery-chat", (req, res, next) => {
+  req.url = "/api/chat";
+  next();
+});
+
+app.post("/api/fn/pull", (req, res, next) => {
+  req.url = "/api/pull";
+  next();
+});
+
+app.post("/api/fn/sync", (req, res, next) => {
+  req.url = "/api/sync";
+  next();
+});
+
+app.post("/api/fn/analyse", (req, res, next) => {
+  req.url = "/api/analyse";
+  next();
+});
+
+app.post("/api/fn/analyse-general", (req, res, next) => {
+  req.url = "/api/analyse-general";
+  next();
 });
 
 // ── Start ─────────────────────────────────────────────────────────────────────

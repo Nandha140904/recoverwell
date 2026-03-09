@@ -36,6 +36,12 @@ export default defineConfig({
         secure: false,
         ws: true,
       },
+      '/.netlify/functions': {
+        target: 'http://127.0.0.1:3001',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace('/.netlify/functions/', '/api/fn/'),
+      },
     },
   },
 })

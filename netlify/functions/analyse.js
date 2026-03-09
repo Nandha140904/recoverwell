@@ -11,7 +11,7 @@ export const handler = async (event, context) => {
 
   try {
     const { fileBase64, mimeType, extraText } = JSON.parse(event.body);
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
     
     const prompt = `You are a clinical pharmacist and recovery specialist AI. 
 CRITICAL: Scan EVERY SINGLE PAGE of this document. Do not miss any hidden sections or late-page medication lists.

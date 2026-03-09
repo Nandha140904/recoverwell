@@ -25,7 +25,7 @@ export const handler = async (event, context) => {
       };
     }
 
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
     
     const systemPrompt = `You are a helpful, professional medical recovery assistant chatbot for a platform called RecoverWell.
 Your goal is to provide personalized recovery advice based ONLY on the patient's discharge information and safe medical practices.
