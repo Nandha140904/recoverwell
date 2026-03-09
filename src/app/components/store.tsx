@@ -130,7 +130,7 @@ export function RecoveryProvider({ children }: { children: React.ReactNode }) {
 
     const timer = setTimeout(async () => {
       try {
-        await fetchWithTimeout("/api/sync", {
+        await fetchWithTimeout("/.netlify/functions/sync", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(data),
