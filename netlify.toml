@@ -3,6 +3,28 @@
   command = "npm run build"
   functions = "netlify/functions"
 
+# API redirects — must come before the SPA catch-all
+[[redirects]]
+  from = "/api/auth/register"
+  to = "/.netlify/functions/register"
+  status = 200
+
+[[redirects]]
+  from = "/api/pull"
+  to = "/.netlify/functions/pull"
+  status = 200
+
+[[redirects]]
+  from = "/api/sync"
+  to = "/.netlify/functions/sync"
+  status = 200
+
+[[redirects]]
+  from = "/api/ai-chat"
+  to = "/.netlify/functions/ai-chat"
+  status = 200
+
+# SPA catch-all — must be last
 [[redirects]]
   from = "/*"
   to = "/index.html"

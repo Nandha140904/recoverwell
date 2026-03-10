@@ -28,16 +28,22 @@ export const handler = async (event, context) => {
   }
 
   try {
-    const { mobile } = JSON.parse(event.body);
+    const { mobile, passwordHash } = JSON.parse(event.body);
     if (!mobile) return { statusCode: 400, body: JSON.stringify({ error: "Mobile required" }) };
+    if (!passwordHash) return { statusCode: 401, body: JSON.stringify({ error: "Password required for cloud authentication." }) };
 
     const db = getPool();
-    
+
     const userRes = await db.query("SELECT * FROM users WHERE mobile = $1", [mobile]);
     const user = userRes.rows[0];
-    
+
     if (!user) {
-      return { statusCode: 404, body: JSON.stringify({ error: "User not found" }) };
+      return { statusCode: 404, body: JSON.stringify({ error: "No account found with this mobile number." }) };
+    }
+
+    // Verify password hash
+    if (user.passwordHash !== passwordHash) {
+      return { statusCode: 401, body: JSON.stringify({ error: "Incorrect password." }) };
     }
 
     const docsRes = await db.query("SELECT * FROM documents WHERE mobile = $1", [mobile]);
@@ -51,6 +57,13 @@ export const handler = async (event, context) => {
 
     const logsRes = await db.query('SELECT * FROM "medicationLogs" WHERE mobile = $1', [mobile]);
     const medicationLogs = logsRes.rows;
+
+    const chatRes = await db.query('SELECT * FROM "chat_messages" WHERE mobile = $1 ORDER BY created_at ASC', [mobile]);
+    const chatMessages = chatRes.rows.map(m => ({
+      role: m.role === 'assistant' ? 'bot' : 'user',
+      content: m.message,
+      created_at: m.created_at
+    }));
 
     const parsedDocuments = documents.map(d => ({
       ...d,
@@ -72,15 +85,16 @@ export const handler = async (event, context) => {
     }));
 
     const recoveryData = {
-      surgeryType: user.surgeryType || "",
+      surgeryType: user.surgeryType || "Post-Surgery Recovery",
       surgeryDate: user.surgeryDate || "",
-      currentWeek: user.currentWeek || 0,
+      currentWeek: user.currentWeek || 1,
       overallProgress: user.overallProgress || 0,
       riskLevel: user.riskLevel || "low",
       healthEntries: parsedHealthEntries,
       documents: parsedDocuments,
       medications: parsedMedications,
       medicationLogs,
+      chatMessages,
       recoveryGuidance: user.recoveryGuidance,
       userProfile: {
         mobile: user.mobile,
