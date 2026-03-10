@@ -151,5 +151,15 @@ export async function initDB() {
     );
   `);
 
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS "chat_messages" (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      mobile TEXT REFERENCES users(mobile),
+      role TEXT CHECK (role IN ('user', 'assistant')),
+      message TEXT,
+      "created_at" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
   return pool;
 }

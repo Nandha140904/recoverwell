@@ -1,6 +1,11 @@
 import { useState, useRef } from "react";
+import * as pdfjsLib from "pdfjs-dist";
 import { useRecovery, type MedicalDocument, type Medication } from "./store";
 import { scheduleMedicationNotifications } from "./notifications";
+import { extractTextFromMedicalFile } from "../lib/extraction";
+
+// Fix for PDF.js worker
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 import {
   FileText,
   Upload,
@@ -17,37 +22,83 @@ import {
 } from "lucide-react";
 
 interface GeminiDocAnalysis {
-  summary: string;
-  keyFindings: string[];
-  simplifiedExplanation: string;
+  diagnosis: string;
+  procedures: string;
   medications: Omit<Medication, "id" | "isActive">[];
+  dietInstructions: string;
+  followUp: string;
+  warningSigns: string;
 }
 
 async function analyseGeneralDocument(
   fileBase64: string,
   mimeType: string,
-  docType: string
+  docType: string,
+  text?: string
 ): Promise<GeminiDocAnalysis | null> {
+  const prompt = `You are a specialized Medical Record Analyst. Your task is to extract clinical data from the following hospital discharge summary.
+
+EXTRACTED DOCUMENT TEXT:
+---
+${text}
+---
+
+INSTRUCTIONS:
+1. Scan the text for standard hospital sections: DIAGNOSIS, PROCEDURES, MEDICATIONS, DISCHARGE INSTRUCTIONS, FOLLOW-UP, and EMERGENCY SIGNS.
+2. Be extremely precise. Even if the text is messy or extracted from OCR, look for medical keywords.
+
+Return ONLY a valid JSON object in this format (no markdown blocks):
+{
+  "diagnosis": "The primary clinical diagnosis (e.g., POLYTRAUMA WITH HEMOPERITONEUM).",
+  "procedures": "Any surgeries or procedures performed (e.g., Exploratory Laparotomy).",
+  "medications": [
+    {
+      "name": "Full medicine name",
+      "dosage": "e.g., 500mg/1gm",
+      "frequency": "e.g., Twice daily (BD) - 10am, 10pm",
+      "duration": "e.g., 5 days or 1 month",
+      "instructions": "e.g., After breakfast / Avoid alcohol"
+    }
+  ],
+  "dietInstructions": "Specific dietary restrictions or nutritional advice provided.",
+  "followUp": "When and where to visit the doctor, or tests needed before next visit.",
+  "warningSigns": "Medical red flags requiring immediate hospital visit."
+}
+
+RULES:
+- If a section is missing, use "Not explicitly mentioned in report".
+- Normalize medical abbreviations (e.g., BD -> Twice daily, TDS -> Thrice daily, OD -> Once daily).
+- Include all medications found in 'medications' array.`;
+
   try {
-    const res = await fetch("/api/analyse-general", {
+    const res = await fetch("/api/ai-chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fileBase64, mimeType, docType }),
+      body: JSON.stringify({
+        model: "llama-3.1-8b-instant",
+        response_format: { type: "json_object" },
+        messages: [{ role: "user", content: prompt }]
+      }),
     });
 
     if (!res.ok) {
       const errData = await res.json().catch(() => ({}));
-      if (errData?.error?.includes("API key")) {
-        throw new Error("INVALID_API_KEY");
-      }
-      console.error("General Analysis API error:", res.status, errData);
-      return null;
+      if (errData?.error?.includes("API key")) throw new Error("INVALID_API_KEY");
+      throw new Error(errData.error || "The AI service encountered an issue. Please try again.");
     }
 
-    return await res.json();
-  } catch (err) {
-    console.error("Gemini General Analyse Error:", err);
-    return null;
+    const responseData = await res.json();
+    const content = responseData.choices?.[0]?.message?.content || "{}";
+    let data: any = {};
+    try {
+      data = JSON.parse(content);
+    } catch(e) {
+      console.warn("Failed to parse JSON", content);
+    }
+    return data;
+  } catch (err: any) {
+    console.error("AI Analysis Error:", err);
+    throw err;
   }
 }
 
@@ -80,7 +131,7 @@ const typeConfig = {
 };
 
 export function Documents() {
-  const { data, addDocument, addMedications } = useRecovery();
+  const { data, addDocument, addMedications, updateRecoveryData } = useRecovery();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [filter, setFilter] = useState<"all" | MedicalDocument["type"]>("all");
 
@@ -133,21 +184,54 @@ export function Documents() {
       const base64 = await fileToBase64(selectedFile);
       const mime = getGeminiMimeType(selectedFile);
 
-      const analysis = await analyseGeneralDocument(base64, mime, typeConfig[uploadType].label);
+      const extractedText = await extractTextFromMedicalFile(selectedFile);
+      
+      if (!extractedText || extractedText.trim().length < 10) {
+        throw new Error("The document appears to be unreadable or contains no medical text. Please try with a clearer photo or PDF.");
+      }
+
+      const analysis = await analyseGeneralDocument(base64, mime, typeConfig[uploadType].label, extractedText);
 
       if (!analysis) {
         throw new Error("AI analysis failed to return a proper format.");
       }
 
+      const newKeyFindings = [];
+      if (analysis.procedures && !analysis.procedures.includes("Not explicitly")) {
+        newKeyFindings.push(`Procedures: ${analysis.procedures}`);
+      }
+      if (analysis.followUp && !analysis.followUp.includes("Not explicitly")) {
+        newKeyFindings.push(`Follow-up: ${analysis.followUp}`);
+      }
+      if (analysis.warningSigns && !analysis.warningSigns.includes("Not explicitly")) {
+        newKeyFindings.push(`Warning Signs: ${analysis.warningSigns}`);
+      }
+      
+      if (newKeyFindings.length === 0) {
+        newKeyFindings.push("Medical document successfully analyzed.");
+      }
+
+      const markdownExplanation = `### Diagnosis\n${analysis.diagnosis || "Not specified."}\n\n### Procedures Performed\n${analysis.procedures || "None specified."}\n\n### Diet & Instructions\n${analysis.dietInstructions || "Standard post-op diet."}\n\n### Follow-up\n${analysis.followUp || "See doctor as scheduled."}`;
+
       addDocument({
         name: selectedFile.name,
         type: uploadType,
         uploadDate: new Date().toISOString().split("T")[0],
-        summary: analysis.summary || "Summary not available.",
-        keyFindings: Array.isArray(analysis.keyFindings) ? analysis.keyFindings : ["No findings extracted."],
-        simplifiedExplanation: analysis.simplifiedExplanation || "Explanation not available.",
+        summary: analysis.diagnosis && !analysis.diagnosis.includes("Not explicitly") 
+          ? `Medical Summary: ${analysis.diagnosis}` 
+          : "General Medical Document",
+        keyFindings: newKeyFindings,
+        simplifiedExplanation: markdownExplanation,
         status: "analyzed",
       });
+
+      // Update global context with diagnosis and guidance if it's a discharge summary or has primary diagnosis
+      if (uploadType === "discharge" || (analysis.diagnosis && !analysis.diagnosis.includes("Not explicitly"))) {
+        updateRecoveryData({
+          surgeryType: analysis.diagnosis,
+          recoveryGuidance: markdownExplanation
+        });
+      }
 
       if (Array.isArray(analysis.medications) && analysis.medications.length > 0) {
         addMedications(analysis.medications);
@@ -164,7 +248,7 @@ export function Documents() {
       if (err.message === "INVALID_API_KEY") {
         setErrorMsg("Your Gemini AI Key is invalid. Please get a free key from aistudio.google.com and update GEMINI_API_KEY in the code.");
       } else {
-        setErrorMsg("Failed to analyze the document. Please try again.");
+        setErrorMsg(err.message || "Failed to analyze the document. Please ensure it is readable and try again.");
       }
     } finally {
       setUploading(false);

@@ -10,6 +10,7 @@ import {
   scheduleMedicationNotifications,
   showImmediateNotification,
 } from "./notifications";
+import { extractTextFromMedicalFile } from "../lib/extraction";
 import {
   HeartPulse,
   Upload,
@@ -38,34 +39,90 @@ interface GeminiMed {
 }
 
 interface GeminiAnalysis {
+  diagnosis: string;
   medications: GeminiMed[];
-  recoveryGuidance: string; 
+  labResults: string;
+  doctorRecommendations: string;
+  dietInstructions: string;
+  warningSigns: string;
 }
 
-async function analyseWithGemini(
-  fileBase64: string,
-  mimeType: string,
-  extraText?: string
+async function analyseWithGroq(
+  extraText: string
 ): Promise<GeminiAnalysis> {
-  const res = await fetch("/api/analyse", {
+  if (!extraText || extraText.trim() === "") {
+    throw new Error("No readable text found in the document to analyze.");
+  }
+
+  const prompt = `You are a world-class AI medical document analyzer. Analyze the provided clinical document text and extract the following structured medical insights.
+  
+  EXTRACTED DOCUMENT TEXT:
+  ---
+  ${extraText}
+  ---
+
+  Return ONLY a valid JSON object in this EXACT format (no markdown formatting blocks, no extra text):
+  {
+    "diagnosis": "The primary diagnosis or condition identified (e.g. Type 2 Diabetes, Post-Appendectomy).",
+    "medications": [
+      {
+        "name": "Medication name",
+        "dosage": "e.g. 500mg or 2 units",
+        "frequency": "e.g. Twice daily / Once daily at night",
+        "duration": "e.g. 5 days / Ongoing",
+        "instructions": "e.g. Take after food / Do not drive"
+      }
+    ],
+    "labResults": "Detailed summary of key lab results, levels, or radiological findings.",
+    "doctorRecommendations": "Specific post-op or clinical recommendations given by the physician.",
+    "dietInstructions": "Any strict diet, hydration, or food instructions requested.",
+    "warningSigns": "Specific medical red flags or warning signs mentioned that require immediate action."
+  }
+
+  IMPORTANT:
+  - If a field is not found in the text, use "None provided".
+  - If multiple diagnoses exist, list them clearly.
+  - For medications, normalize frequencies (e.g. BD to Twice daily).`;
+
+  const res = await fetch("/api/ai-chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ fileBase64, mimeType, extraText }),
+    body: JSON.stringify({
+      model: "llama-3.1-8b-instant",
+      response_format: { type: "json_object" },
+      messages: [{ role: "user", content: prompt }]
+    }),
   });
 
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));
-    if (errData?.error?.includes("API key")) {
-      throw new Error("INVALID_API_KEY");
-    }
-    console.error("Analysis API error:", res.status, errData);
-    throw new Error(errData.error || "AI Analysis failed");
+    if (errData?.error?.includes("API key")) throw new Error("INVALID_API_KEY");
+    throw new Error(errData.error || "The AI service encountered an issue. Please try again.");
   }
 
-  const data = await res.json();
+  const responseData = await res.json();
+  const content = responseData.choices?.[0]?.message?.content || "{}";
+  let data: any = {};
+  try {
+    data = JSON.parse(content);
+  } catch(e) {
+    console.warn("Failed to parse JSON", content);
+  }
+  
+  const guidanceParts = [];
+  if (data.diagnosis) guidanceParts.push(`### Diagnosis\n${data.diagnosis}`);
+  if (data.doctorRecommendations && !data.doctorRecommendations.includes("None provided")) guidanceParts.push(`### Doctor's Recommendations\n${data.doctorRecommendations}`);
+  if (data.dietInstructions && !data.dietInstructions.includes("None provided")) guidanceParts.push(`### Diet Instructions\n${data.dietInstructions}`);
+  if (data.warningSigns && !data.warningSigns.includes("None provided")) guidanceParts.push(`### Warning Signs\n${data.warningSigns}`);
+  if (data.labResults && !data.labResults.includes("None provided")) guidanceParts.push(`### Lab Results\n${data.labResults}`);
+
   return {
+    diagnosis: data.diagnosis || "None provided",
     medications: Array.isArray(data.medications) ? data.medications : [],
-    recoveryGuidance: data.recoveryGuidance || "",
+    labResults: data.labResults || "None provided",
+    doctorRecommendations: data.doctorRecommendations || "None provided",
+    dietInstructions: data.dietInstructions || "None provided",
+    warningSigns: data.warningSigns || "None provided",
   };
 }
 
@@ -155,25 +212,16 @@ export function OnboardingUpload() {
       const base64 = await fileToBase64(file);
       const mimeType = getGeminiMimeType(file);
       
-      let extraText = "";
-      if (mimeType === "application/pdf") {
-        try {
-          const arrayBuffer = await file.arrayBuffer();
-          const pdfHost = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-          let text = "";
-          for (let i = 1; i <= pdfHost.numPages; i++) {
-            const page = await pdfHost.getPage(i);
-            const content = await page.getTextContent();
-            text += content.items.map((item: any) => item.str).join(" ") + "\n";
-          }
-          extraText = text;
-        } catch (e) {
-          console.warn("PDF text extraction failed:", e);
-        }
+      // Generate extraText via pdf.js if it's a PDF
+      setAnalysisStage(1);
+      const extractedText = await extractTextFromMedicalFile(file);
+      
+      if (!extractedText || extractedText.trim().length < 10) {
+        throw new Error("The document appears to be unreadable or contains no medical text. Please try with a clearer photo or PDF.");
       }
 
       setAnalysisStage(2);
-      const raw = await analyseWithGemini(base64, mimeType, extraText);
+      const raw = await analyseWithGroq(extractedText);
 
       setAnalysisStage(3);
       await delay(500);
@@ -190,8 +238,15 @@ export function OnboardingUpload() {
         reminderTimes: m.reminderTimes && m.reminderTimes.length > 0 ? m.reminderTimes : undefined,
       }));
 
-      // Store AI guidance
-      updateRecoveryData({ recoveryGuidance: raw.recoveryGuidance });
+      // Build recovery guidance from AI response components
+      const guidance = `**Doctor's Recommendations:**\n${raw.doctorRecommendations}\n\n**Diet Instructions:**\n${raw.dietInstructions}\n\n**Warning Signs:**\n${raw.warningSigns}`;
+      
+      // Store AI results in global state
+      updateRecoveryData({ 
+        recoveryGuidance: guidance,
+        surgeryType: raw.diagnosis && !raw.diagnosis.includes("None provided") ? raw.diagnosis : "Post-Surgery Recovery",
+        surgeryDate: new Date().toISOString().split('T')[0] // Use today as default surgery date if not found
+      });
 
       setExtractedCount(meds.length);
       setMedications(meds);
@@ -199,9 +254,9 @@ export function OnboardingUpload() {
     } catch (err: any) {
       console.error("Analysis error:", err);
       if (err.message === "INVALID_API_KEY") {
-        setAnalysisError("Your Google Gemini API key is missing or invalid. Please get one for free at aistudio.google.com and update the code.");
+        setAnalysisError("Your Google Gemini API key is missing or invalid. Please check your configuration.");
       } else {
-        setAnalysisError("AI analysis failed. You can add your medications manually below.");
+        setAnalysisError(err.message || "Failed to analyze the document. You can add your medications manually below.");
       }
       setExtractedCount(0);
       setMedications([]);

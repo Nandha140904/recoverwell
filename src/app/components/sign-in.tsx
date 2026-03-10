@@ -110,7 +110,7 @@ export function SignIn() {
     return Object.keys(e).length === 0;
   };
 
-  // ── Handle Register ───────────────────────────────────────────────────────
+  // ── Handle Register (Cloud-First) ──────────────────────────────────────────
   const handleRegister = async () => {
     if (!validateReg()) return;
     setSubmitting(true);
@@ -118,6 +118,27 @@ export function SignIn() {
 
     try {
       const hash = await hashPassword(reg.password);
+      
+      // Step 1: Create account in the cloud (Supabase)
+      const res = await fetchWithTimeout("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: reg.name,
+          doctorName: reg.doctorName,
+          doctorMobile: reg.doctorMobile,
+          bloodGroup: reg.bloodGroup,
+          mobile: reg.mobile,
+          passwordHash: hash
+        }),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || "Failed to create account in the cloud.");
+      }
+
+      // Step 2: Set local state
       setUserProfile({
         name: reg.name,
         doctorName: reg.doctorName,
@@ -128,18 +149,19 @@ export function SignIn() {
         isLoggedIn: true,
         hasUploadedDischarge: false,
       });
+
       navigate("/onboarding-upload");
     } catch (error) {
       setErrors({
         registerGeneral:
-          error instanceof Error ? error.message : "Unable to create your account.",
+          error instanceof Error ? error.message : "Unable to create your account in the cloud.",
       });
     } finally {
       setSubmitting(false);
     }
   };
 
-  // ── Handle Login ──────────────────────────────────────────────────────────
+  // ── Handle Login (Cloud-First) ─────────────────────────────────────────────
   const handleLogin = async () => {
     if (!validateLogin()) return;
     setSubmitting(true);
@@ -147,105 +169,58 @@ export function SignIn() {
 
     try {
       const passwordHash = await hashPassword(login.password);
-      const storedProfile =
-        data.userProfile?.mobile === login.mobile ? data.userProfile : null;
-      let cloudError: string | null = null;
+      
+      // Attempt to pull profile and data from the cloud using authenticated mobile + hash
+      const res = await fetchWithTimeout(
+        "/api/pull",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ 
+            mobile: login.mobile,
+            passwordHash: passwordHash
+          }),
+        },
+        15000
+      );
 
-      try {
-        const fetchUrl = buildApiUrl("/api/pull");
-        console.log(`[Diagnostic] Initiating sign-in pull from: ${fetchUrl}`);
-        
-        const res = await fetchWithTimeout(
-          "/api/pull",
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ mobile: login.mobile }),
+      if (res.ok) {
+        const cloudData = await res.json();
+
+        if (!cloudData?.userProfile) {
+          throw new Error("Invalid response from recovery server.");
+        }
+
+        // Successfully authenticated and fetched ALL user data
+        applyCloudSync({
+          ...cloudData,
+          userProfile: {
+            ...cloudData.userProfile,
+            isLoggedIn: true,
           },
-          15000 // Increased timeout for potentially slow remote connections
-        );
+        });
 
-        console.log(`[Diagnostic] Sign-in pull response: ${res.status} ${res.statusText}`);
-
-        if (res.ok) {
-          const cloudData = await res.json();
-
-          if (!cloudData?.userProfile?.passwordHash) {
-            setErrors({
-              loginGeneral: "The recovery server returned an invalid sign-in response.",
-            });
-            return;
-          }
-
-          if (passwordHash !== cloudData.userProfile.passwordHash) {
-            setErrors({ loginPassword: "Incorrect password. Please try again." });
-            return;
-          }
-
-          applyCloudSync({
-            ...cloudData,
-            userProfile: {
-              ...cloudData.userProfile,
-              isLoggedIn: true,
-            },
-          });
-
-          if (cloudData.userProfile.hasUploadedDischarge) {
-            navigate("/dashboard");
-          } else {
-            navigate("/onboarding-upload");
-          }
-          return;
-        }
-
-        if (res.status === 404) {
-          const errorMessage = await readApiError(res, "");
-          cloudError = errorMessage || "The recovery server endpoint could not be found. If you are on Netlify, please ensure your VITE_API_BASE_URL is configured to point to your hosted backend.";
-        } else {
-          cloudError = await readApiError(
-            res,
-            "The recovery server is currently unreachable or undergoing maintenance."
-          );
-        }
-      } catch (error) {
-        if (error instanceof ApiRequestError) {
-          cloudError = error.message;
-        } else {
-          cloudError =
-            error instanceof Error ? error.message : "Unable to sign in right now.";
-        }
-      }
-
-      if (storedProfile) {
-        if (passwordHash !== storedProfile.passwordHash) {
-          setErrors({ loginPassword: "Incorrect password. Please try again." });
-          return;
-        }
-
-        loginAs(storedProfile);
-        if (storedProfile.hasUploadedDischarge) {
-          navigate("/");
+        if (cloudData.userProfile.hasUploadedDischarge) {
+          navigate("/dashboard");
         } else {
           navigate("/onboarding-upload");
         }
         return;
       }
 
-      if (cloudError) {
-        setErrors({
-          loginGeneral: `${cloudError} This device does not have a local copy of your account.`,
-        });
-        return;
+      // Handle specific error codes from the backend
+      if (res.status === 401) {
+        setErrors({ loginPassword: "Incorrect password. Please try again." });
+      } else if (res.status === 404) {
+        setErrors({ loginMobile: "No account found with this mobile number. Please register first." });
+      } else {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || "Cloud authentication service is currently unavailable.");
       }
-
-      setErrors({
-        loginMobile:
-          "No account found for this mobile number on this device or in the cloud.",
-      });
     } catch (error) {
       setErrors({
         loginGeneral:
-          error instanceof Error ? error.message : "Unable to sign in right now.",
+          error instanceof Error ? error.message : "Unable to sign in right now. Check your internet connection.",
       });
     } finally {
       setSubmitting(false);

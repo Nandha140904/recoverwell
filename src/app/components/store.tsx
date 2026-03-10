@@ -56,6 +56,12 @@ export interface MedicalDocument {
   status: "analyzed" | "processing" | "failed";
 }
 
+export interface ChatMessage {
+  role: "user" | "bot";
+  content: string;
+  created_at?: string;
+}
+
 export interface RecoveryData {
   surgeryType: string;
   surgeryDate: string;
@@ -67,6 +73,7 @@ export interface RecoveryData {
   medications: Medication[];
   medicationLogs: MedicationLog[];
   userProfile: UserProfile | null;
+  chatMessages: ChatMessage[];
   recoveryGuidance?: string;
 }
 
@@ -85,23 +92,25 @@ interface RecoveryContextType {
   deleteMedication: (id: string) => void;
   logout: () => void;
   applyCloudSync: (fullData: RecoveryData) => void;
+  addChatMessage: (msg: ChatMessage) => void;
 }
 
 const RecoveryContext = createContext<RecoveryContextType | undefined>(undefined);
 
-const DATA_VERSION = "1.0.2";
+const DATA_VERSION = "1.0.5";
 const SYNC_DEBOUNCE_MS = 2000;
 
 const defaultRecoveryData: RecoveryData = {
-  surgeryType: "Total Knee Replacement",
-  surgeryDate: "2024-03-01",
-  currentWeek: 2,
-  overallProgress: 35,
+  surgeryType: "Post-Surgery Recovery",
+  surgeryDate: "",
+  currentWeek: 1,
+  overallProgress: 0,
   riskLevel: "low",
   healthEntries: [],
   documents: [],
   medications: [],
   medicationLogs: [],
+  chatMessages: [],
   userProfile: null,
 };
 
@@ -115,7 +124,17 @@ export function RecoveryProvider({ children }: { children: React.ReactNode }) {
         return defaultRecoveryData;
       }
       const stored = localStorage.getItem("recoveryData");
-      return stored ? JSON.parse(stored) : defaultRecoveryData;
+      if (!stored) return defaultRecoveryData;
+      
+      const parsed = JSON.parse(stored);
+      // Data Migration: Remove legacy placeholder data
+      if (parsed.surgeryType === "Total Knee Replacement") {
+        parsed.surgeryType = "Post-Surgery Recovery";
+        parsed.surgeryDate = "";
+        parsed.currentWeek = 1;
+        parsed.overallProgress = 0;
+      }
+      return parsed;
     } catch {
       return defaultRecoveryData;
     }
@@ -254,11 +273,18 @@ export function RecoveryProvider({ children }: { children: React.ReactNode }) {
     setData((prev) => ({ ...prev, userProfile: prev.userProfile ? { ...prev.userProfile, isLoggedIn: false } : null }));
   };
 
+  const addChatMessage = (msg: ChatMessage) => {
+    setData((prev) => ({
+      ...prev,
+      chatMessages: [...(prev.chatMessages || []), msg],
+    }));
+  };
+
   return (
     <RecoveryContext.Provider value={{
       data, addHealthEntry, addDocument, addMedications, updateMedicationLog, updateRecoveryData,
       setUserProfile, loginAs, markDischargeUploaded, logout, applyCloudSync,
-      deactivateMedication, deleteMedication, updateMedicationStatus
+      deactivateMedication, deleteMedication, updateMedicationStatus, addChatMessage
     }}>
       {children}
     </RecoveryContext.Provider>

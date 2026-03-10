@@ -1,23 +1,38 @@
 import { useState, useRef, useEffect } from "react";
-import { useRecovery } from "./store";
+import { useRecovery, type ChatMessage } from "./store";
 import { Send, Bot, User, Loader2, Sparkles, MessageSquare, X } from "lucide-react";
 
-interface Message {
-  role: "user" | "bot";
-  content: string;
-}
-
 export function RecoveryChatbot() {
-  const { data } = useRecovery();
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      role: "bot",
-      content: "Hello! I'm your Recovery Assistant. I've reviewed your discharge summary and I'm here to answer any questions you have about your diet, medications, or post-surgery care. How can I help you today?",
-    },
-  ]);
+  const { data, addChatMessage } = useRecovery();
+  
+  // Local state for the UI, initialized from global store if available
+  const [messages, setMessages] = useState<ChatMessage[]>(() => {
+    const existing = data.chatMessages || [];
+    if (existing.length > 0) {
+      return existing;
+    }
+    const hasSummary = !!data.recoveryGuidance || data.documents.some(d => d.status === "analyzed");
+    return [
+      {
+        role: "bot",
+        content: hasSummary 
+          ? `Hello! I'm your Recovery Assistant. I've analyzed your medical records for ${data.surgeryType || "your recovery"}. How can I help you today?`
+          : "Hello! I'm your AI Recovery Assistant. Once you upload your discharge summary or lab reports, I can provide personalized guidance about your recovery. How can I help you today?",
+      },
+    ];
+  });
+
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Sync local view with global data if global changes (e.g. from cloud pull)
+  useEffect(() => {
+    const cloudMsgs = data.chatMessages || [];
+    if (cloudMsgs.length > 0) {
+      setMessages(cloudMsgs);
+    }
+  }, [data.chatMessages]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -25,12 +40,36 @@ export function RecoveryChatbot() {
     }
   }, [messages, loading]);
 
+  const saveMessageToCloud = async (msg: ChatMessage) => {
+    if (!data.userProfile?.mobile || !data.userProfile?.passwordHash) return;
+    
+    try {
+      await fetch("/api/chat/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mobile: data.userProfile.mobile,
+          passwordHash: data.userProfile.passwordHash,
+          role: msg.role,
+          message: msg.content
+        }),
+      });
+    } catch (err) {
+      console.warn("Failed to persist message to cloud:", err);
+    }
+  };
+
   const sendMessage = async () => {
     if (!input.trim() || loading) return;
 
     const currentInput = input.trim();
+    const userMsg: ChatMessage = { role: "user", content: currentInput };
+    
     setInput("");
-    setMessages((prev) => [...prev, { role: "user", content: currentInput }]);
+    setMessages((prev: ChatMessage[]) => [...prev, userMsg]);
+    addChatMessage(userMsg);
+    saveMessageToCloud(userMsg);
+    
     setLoading(true);
 
     // Build context from clinical data
@@ -38,35 +77,71 @@ export function RecoveryChatbot() {
       .filter(m => m.isActive)
       .map(m => `- ${m.name} (${m.dosage}): ${m.frequency}`)
       .join("\n");
+
+    // Include analyzed documents summary
+    const docsContext = data.documents
+      .filter(doc => doc.status === "analyzed")
+      .map(doc => `--- DOCUMENT: ${doc.name} (${doc.type}) ---\n${doc.simplifiedExplanation}\nKey Findings: ${doc.keyFindings.join(", ")}`)
+      .join("\n\n");
       
     const context = [
-      `Patient Name: ${data.userProfile?.name}`,
-      `Surgery: ${data.surgeryType}`,
-      `Surgery Date: ${data.surgeryDate}`,
-      `Recovery Guidance: ${data.recoveryGuidance || "Not specified"}`,
-      `Current Medications:\n${medicationsList || "None listed"}`,
-    ].join("\n");
+      `Patient Name: ${data.userProfile?.name || "Unknown"}`,
+      data.surgeryType && data.surgeryType !== "Post-Surgery Recovery" ? `Primary Diagnosis: ${data.surgeryType}` : null,
+      data.surgeryDate ? `Procedure Date: ${data.surgeryDate}` : null,
+      data.recoveryGuidance ? `General Recovery Guidance: ${data.recoveryGuidance}` : null,
+      medicationsList ? `Current Medications:\n${medicationsList}` : null,
+      docsContext ? `Medical Records & Detailed Analysis:\n${docsContext}` : null,
+    ].filter(Boolean).join("\n\n");
+
+    const systemPrompt = `You are an expert Medical Recovery Assistant. You provide personalized guidance based on the patient's REAL medical documents and data provided below. 
+
+INSTRUCTIONS:
+- Use the "Medical Records & Analysis" section to answer questions specifically about their discharge summary, lab reports, or surgeries.
+- If the user asks about something mentioned in their reports, refer to it precisely.
+- Avoid giving dangerous unverified medical advice, and refer to their doctor if unsure. 
+- Keep your answers brief, empathetic, and formatted in Markdown.
+    
+PATIENT CONTEXT:
+${context}`;
+
+    const apiMessages = [
+      { role: "system", content: systemPrompt },
+      ...messages.map((m: ChatMessage) => ({
+        role: m.role === "bot" ? "assistant" : "user",
+        content: m.content,
+      })),
+      { role: "user", content: currentInput }
+    ];
 
     try {
-      const res = await fetch("/api/chat", {
+      const res = await fetch("/api/ai-chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: currentInput, context }),
+        body: JSON.stringify({
+          model: "llama-3.1-8b-instant",
+          messages: apiMessages
+        }),
       });
 
       if (!res.ok) {
-        const errorData = await res.json();
+        const errorData = await res.json().catch(() => ({}));
         throw new Error(errorData.error || "The AI assistant is temporarily unavailable.");
       }
       
       const resData = await res.json();
-      setMessages((prev) => [...prev, { role: "bot", content: resData.text }]);
+      const botReply = resData.choices?.[0]?.message?.content || "I'm sorry, I couldn't process that.";
+      const botMsg: ChatMessage = { role: "bot", content: botReply };
+      
+      setMessages((prev: ChatMessage[]) => [...prev, botMsg]);
+      addChatMessage(botMsg);
+      saveMessageToCloud(botMsg);
     } catch (err: any) {
       console.error(err);
-      setMessages((prev) => [...prev, { 
+      const errorMsg: ChatMessage = { 
         role: "bot", 
         content: `**Error:** ${err.message}. Please try again later or contact support if the issue persists.` 
-      }]);
+      };
+      setMessages((prev: ChatMessage[]) => [...prev, errorMsg]);
     } finally {
       setLoading(false);
     }
@@ -95,7 +170,7 @@ export function RecoveryChatbot() {
         ref={scrollRef}
         className="flex-1 overflow-y-auto p-4 space-y-4 bg-muted/20"
       >
-        {messages.map((msg, i) => (
+        {messages.map((msg: ChatMessage, i: number) => (
           <div 
             key={i} 
             className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
@@ -111,7 +186,7 @@ export function RecoveryChatbot() {
                   ? "bg-primary text-primary-foreground rounded-tr-none" 
                   : "bg-card border border-border text-foreground rounded-tl-none"
               }`}>
-                {msg.content.split('\n').map((line, idx) => (
+                {msg.content.split('\n').map((line: string, idx: number) => (
                   <p key={idx} className={idx > 0 ? "mt-2" : ""}>{line}</p>
                 ))}
               </div>

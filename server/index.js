@@ -1,13 +1,12 @@
 /**
  * RecoverWell — Production API Server
  *
- * Authentication is now password-based (no OTP/SMS required).
+ * Cloud-based Authentication System (Supabase Backend)
  * This server handles:
- *  - Health check endpoint
- *  - Serving the production Vite build as static files in production
- *
- * Password authentication is handled entirely client-side using the
- * Web Crypto API (SHA-256), so no backend calls are needed for auth.
+ *  - Secure User Registration & Authentication
+ *  - Real-time Data Synchronization (Supabase PostgreSQL)
+ *  - Medical Document Analysis (Groq AI)
+ *  - Health Check & Monitoring
  */
 
 import { config } from "dotenv";
@@ -92,11 +91,46 @@ app.use((err, _req, res, next) => {
   next(err);
 });
 
-// ── GET /api/pull ────────────────────────────────────────────────────────────
-// Fetch the entire recovery profile for a user to sync to a fresh device
+// ── POST /api/auth/register ──────────────────────────────────────────────────
+// Securely creates a new user account in the cloud (Supabase)
+app.post("/api/auth/register", async (req, res) => {
+  const { name, doctorName, doctorMobile, bloodGroup, mobile, passwordHash } = req.body;
+
+  if (!mobile || !passwordHash) {
+    return res.status(400).json({ error: "Mobile number and password are required." });
+  }
+
+  if (dbInitError) return res.status(503).json({ error: "Database unavailable" });
+  if (!db) return res.status(503).json({ error: "Database still starting up" });
+
+  try {
+    // Check if user already exists
+    const checkUser = await db.query("SELECT mobile FROM users WHERE mobile = $1", [mobile]);
+    if (checkUser.rows.length > 0) {
+      return res.status(409).json({ error: "An account with this mobile number already exists." });
+    }
+
+    // Insert user
+    await db.query(
+      `INSERT INTO users (mobile, name, "doctorName", "doctorMobile", "bloodGroup", "passwordHash", "hasUploadedDischarge")
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [mobile, name, doctorName, doctorMobile, bloodGroup, passwordHash, 0]
+    );
+
+    res.status(201).json({ success: true, message: "Account created successfully." });
+  } catch (err) {
+    console.error("Registration Error:", err);
+    res.status(500).json({ error: "Failed to create account in the cloud." });
+  }
+});
+
+// ── GET /api/pull (Secure Login) ─────────────────────────────────────────────
+// Validates credentials and fetches the entire recovery profile
 app.post("/api/pull", async (req, res) => {
-  const { mobile } = req.body;
+  const { mobile, passwordHash } = req.body;
   if (!mobile) return res.status(400).json({ error: "Mobile required" });
+  if (!passwordHash) return res.status(401).json({ error: "Password required for cloud authentication." });
+
   if (dbInitError) return res.status(503).json({ error: "Database unavailable" });
   if (!db) return res.status(503).json({ error: "Database still starting up" });
 
@@ -105,20 +139,29 @@ app.post("/api/pull", async (req, res) => {
     const user = userRes.rows[0];
     
     if (!user) {
-      return res.status(404).json({ error: "User not found" });
+      return res.status(404).json({ error: "No account found with this mobile number." });
+    }
+
+    // Verify password hash
+    if (user.passwordHash !== passwordHash) {
+      return res.status(401).json({ error: "Incorrect password." });
     }
 
     const docsRes = await db.query("SELECT * FROM documents WHERE mobile = $1", [mobile]);
-    const documents = docsRes.rows;
-
-    const healthRes = await db.query('SELECT * FROM "healthEntries" WHERE mobile = $1', [mobile]);
-    const healthEntries = healthRes.rows;
-
     const medsRes = await db.query("SELECT * FROM medications WHERE mobile = $1", [mobile]);
-    const medications = medsRes.rows;
+    const logsRes = await db.query("SELECT * FROM \"medicationLogs\" WHERE mobile = $1", [mobile]);
+    const healthRes = await db.query("SELECT * FROM \"healthEntries\" WHERE mobile = $1", [mobile]);
+    const chatRes = await db.query("SELECT * FROM \"chat_messages\" WHERE mobile = $1 ORDER BY created_at ASC", [mobile]);
 
-    const logsRes = await db.query('SELECT * FROM "medicationLogs" WHERE mobile = $1', [mobile]);
+    const documents = docsRes.rows;
+    const healthEntries = healthRes.rows;
+    const medications = medsRes.rows;
     const medicationLogs = logsRes.rows;
+    const chatMessages = chatRes.rows.map(m => ({
+      role: m.role === 'assistant' ? 'bot' : 'user',
+      content: m.message,
+      created_at: m.created_at
+    }));
 
     // Parse specific fields back to arrays
     const parsedDocuments = documents.map(d => ({
@@ -142,16 +185,30 @@ app.post("/api/pull", async (req, res) => {
     }));
 
     // Reconstruct
+    let surgeryType = user.surgeryType || "Post-Surgery Recovery";
+    let surgeryDate = user.surgeryDate || "";
+    let currentWeek = user.currentWeek || 1;
+    let overallProgress = user.overallProgress || 0;
+
+    // Sanitize legacy demo data from cloud
+    if (surgeryType === "Total Knee Replacement") {
+      surgeryType = "Post-Surgery Recovery";
+      surgeryDate = "";
+      currentWeek = 1;
+      overallProgress = 0;
+    }
+
     const recoveryData = {
-      surgeryType: user.surgeryType || "",
-      surgeryDate: user.surgeryDate || "",
-      currentWeek: user.currentWeek || 0,
-      overallProgress: user.overallProgress || 0,
+      surgeryType,
+      surgeryDate,
+      currentWeek,
+      overallProgress,
       riskLevel: user.riskLevel || "low",
       healthEntries: parsedHealthEntries,
       documents: parsedDocuments,
       medications: parsedMedications,
       medicationLogs,
+      chatMessages,
       recoveryGuidance: user.recoveryGuidance,
       userProfile: {
         mobile: user.mobile,
@@ -172,6 +229,38 @@ app.post("/api/pull", async (req, res) => {
   }
 });
 
+// ── POST /api/chat/save ──────────────────────────────────────────────────────
+// Saves a single chat message to the cloud database
+app.post("/api/chat/save", async (req, res) => {
+  const { mobile, passwordHash, role, message } = req.body;
+
+  if (!mobile || !passwordHash || !role || !message) {
+    return res.status(400).json({ error: "Missing required fields for chat storage." });
+  }
+
+  if (dbInitError) return res.status(503).json({ error: "Database unavailable" });
+  if (!db) return res.status(503).json({ error: "Database still starting up" });
+
+  try {
+    // Auth Check
+    const userRes = await db.query("SELECT \"passwordHash\" FROM users WHERE mobile = $1", [mobile]);
+    if (userRes.rows.length === 0 || userRes.rows[0].passwordHash !== passwordHash) {
+      return res.status(401).json({ error: "Unauthorized chat storage request." });
+    }
+
+    const mappedRole = role === 'bot' ? 'assistant' : 'user';
+    await db.query(
+      "INSERT INTO chat_messages (mobile, role, message) VALUES ($1, $2, $3)",
+      [mobile, mappedRole, message]
+    );
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Chat Save Error:", err);
+    res.status(500).json({ error: "Failed to save message to cloud." });
+  }
+});
+
 // ── POST /api/sync ────────────────────────────────────────────────────────────
 // Pushes the entire local browser state to the server to keep it synced
 app.post("/api/sync", async (req, res) => {
@@ -181,10 +270,26 @@ app.post("/api/sync", async (req, res) => {
   if (!db) return res.status(503).json({ error: "Database still starting up" });
 
   const mobile = data.userProfile.mobile;
+  const passwordHash = data.userProfile.passwordHash;
+  
+  if (!passwordHash) return res.status(401).json({ error: "Cloud authentication required for sync." });
+
   let client;
 
   try {
     client = await db.connect();
+    
+    // Verify user & password before proceeding
+    const authRes = await client.query("SELECT \"passwordHash\" FROM users WHERE mobile = $1", [mobile]);
+    if (authRes.rows.length > 0) {
+      if (authRes.rows[0].passwordHash !== passwordHash) {
+        client.release();
+        return res.status(401).json({ error: "Invalid cloud credentials. Sync rejected." });
+      }
+    }
+    // If user doesn't exist yet, we allow the sync (effectively registering them) 
+    // though the explicit /api/auth/register is now the primary way.
+
     await client.query("BEGIN");
 
 // 1. Upsert User
@@ -264,67 +369,51 @@ app.post("/api/sync", async (req, res) => {
   }
 });
 
-// ── POST /api/chat ────────────────────────────────────────────────────────────
-// Securely proxies chatbot requests to Gemini to protect the API key
-app.post("/api/chat", async (req, res) => {
-  const { prompt, context } = req.body;
-  const apiKey = process.env.VITE_GEMINI_API_KEY;
+// ── POST /api/ai-chat ────────────────────────────────────────────────────────
+// Unified endpoint for AI chatbot and document analysis via Groq
+app.post("/api/ai-chat", async (req, res) => {
+  const apiKey = process.env.GROQ_API_KEY;
 
   if (!apiKey) {
-    return res.status(500).json({ error: "Gemini API key not configured on server." });
-  }
-
-  if (!prompt) {
-    return res.status(400).json({ error: "Prompt is required" });
+    return res.status(500).json({ error: "Groq API key not configured on server. Please check your .env file." });
   }
 
   try {
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-    
-    // We use gemini-2.0-flash as the current available model for chatbots
-    const systemPrompt = `You are a helpful, professional medical recovery assistant chatbot for a platform called RecoverWell.
-Your goal is to provide personalized recovery advice based ONLY on the patient's discharge information and safe medical practices.
+    const groqUrl = "https://api.groq.com/openai/v1/chat/completions";
 
-CONTEXT:
-${context}
-
-RULES:
-1. Be encouraging, empathetic, and clear.
-2. If a patient asks for medical advice that requires a doctor (e.g., severe pain, signs of infection), strongly advise them to contact their surgeon or emergency services immediately.
-3. Keep answers concise and patient-friendly.
-4. Use the provided context to answer specific questions about their recovery plan.
-5. If you don't know the answer or it's not in the summary, be honest and suggest checking with their medical team.
-6. DO NOT provide prescriptions, diagnosis of new conditions, or unsafe medical advice.
-7. Use Markdown for formatting (bold, lists).
-
-User Question: ${prompt}
-`;
-
-    const response = await fetch(geminiUrl, {
+    const response = await fetch(groqUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: systemPrompt }] }],
-        generationConfig: { temperature: 0.7, maxOutputTokens: 800 },
-      }),
+      headers: { 
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`
+      },
+      body: JSON.stringify(req.body)
     });
 
     if (!response.ok) {
-      const errorData = await response.json();
-      console.error("Gemini API Error:", errorData);
+      const errorData = await response.json().catch(() => ({}));
       return res.status(response.status).json({ 
-        error: errorData?.error?.message || "Failed to get response from AI." 
+        error: errorData?.error?.message || "Groq's AI service is currently unavailable." 
       });
     }
 
-    const data = await response.json();
-    const botText = data?.candidates?.[0]?.content?.parts?.[0]?.text || "I'm sorry, I couldn't process that request.";
-    
-    res.json({ text: botText });
+    const result = await response.json();
+    return res.json(result);
   } catch (err) {
-    console.error("Chat Error:", err);
-    res.status(500).json({ error: "Internal server error during chat processing." });
+    console.error("ai-chat Exception:", err);
+    res.status(500).json({ error: "An unexpected error occurred: " + err.message });
   }
+});
+
+// ── Legacy AI Endpoints (Deprecated) ─────────────────────────────────────────
+app.post("/api/chat", (req, res) => {
+  res.status(400).json({ error: "Endpoint deprecated. Please use /api/ai-chat." });
+});
+app.post("/api/analyse", (req, res) => {
+  res.status(400).json({ error: "Endpoint deprecated. Please use /api/ai-chat." });
+});
+app.post("/api/analyse-general", (req, res) => {
+  res.status(400).json({ error: "Endpoint deprecated. Please use /api/ai-chat." });
 });
 
 // ── Serve Vite production build (run `npm run build` first) ───────────────────
@@ -341,193 +430,17 @@ if (existsSync(distPath)) {
   });
 }
 
-// ── POST /api/analyse ────────────────────────────────────────────────────────
-// Analyzes discharge summaries (PDF/Image) using Gemini
-app.post("/api/analyse", async (req, res) => {
-  const { fileBase64, mimeType, extraText } = req.body;
-  const apiKey = process.env.VITE_GEMINI_API_KEY;
-
-  if (!apiKey) {
-    return res.status(500).json({ error: "Gemini API key not configured on server." });
-  }
-
-  try {
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-    
-    const prompt = `You are a clinical pharmacist and recovery specialist AI. 
-CRITICAL: Scan EVERY SINGLE PAGE of this document. Do not miss any hidden sections or late-page medication lists.
-
-Tasks:
-1. Extract ALL medications listed.
-2. Generate comprehensive, personalized recovery guidance based on the diagnosis, surgery, and specific patient details found.
-
-Return ONLY a valid JSON object (no markdown, no explanation) in this exact format:
-{
-  "medications": [
-    {
-      "name": "Medication name",
-      "dosage": "e.g. 500mg",
-      "frequency": "e.g. Twice daily",
-      "duration": "e.g. 5 days",
-      "instructions": "e.g. Take after food",
-      "reminderTimes": ["08:00", "20:00"] 
-    }
-  ],
-  "recoveryGuidance": "Markdown formatted recovery advice including: Diet (specific to surgery), Hydration, Exercise limits, Wound care, and Warning signs."
-}
-
-Rules for Medications:
-- Include tablets, injections, syrups, etc.
-- Normalize frequency (BD -> Twice daily, etc.).
-- Convert 'reminderTimes' to HH:mm (24h) if mentioned, otherwise provide logical defaults based on frequency.
-
-Rules for Recovery Guidance:
-- Use Markdown headers (###).
-- Be specific to the surgery mentioned.
-
-If no data is found, return empty fields.`;
-
-    const body = {
-      contents: [
-        {
-          parts: [
-            {
-              inline_data: {
-                mime_type: mimeType,
-                data: fileBase64,
-              },
-            },
-            { text: extraText ? `EXTRACTED TEXT FROM PDF:\n${extraText}\n\n${prompt}` : prompt },
-          ],
-        },
-      ],
-      generationConfig: {
-        temperature: 0.1,
-        maxOutputTokens: 2048,
-      },
-    };
-
-    const response = await fetch(geminiUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      console.error("Gemini Analyse Error:", errorData);
-      return res.status(response.status).json({ error: errorData?.error?.message || "AI Analysis failed." });
-    }
-
-    const result = await response.json();
-    const text = result?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-    
-    // Extract JSON from response
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      return res.status(500).json({ error: "AI failed to return valid clinical data." });
-    }
-    
-    res.json(JSON.parse(jsonMatch[0]));
-  } catch (err) {
-    console.error("Analyse Exception:", err);
-    res.status(500).json({ error: "Internal server error during document analysis." });
-  }
-});
-
-// ── POST /api/analyse-general ────────────────────────────────────────────────
-// Analyzes general medical documents (Lab, Radiology, etc.)
-app.post("/api/analyse-general", async (req, res) => {
-  const { fileBase64, mimeType, docType } = req.body;
-  const apiKey = process.env.VITE_GEMINI_API_KEY;
-
-  if (!apiKey) {
-    return res.status(500).json({ error: "Gemini API key not configured on server." });
-  }
-
-  try {
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-    
-    const prompt = `You are an expert medical AI assistant. Analyze this ${docType} document.
-
-Extract the medical information and return ONLY a valid JSON object in this exact format:
-{
-  "summary": "1-2 sentence medical summary of what this document is about.",
-  "keyFindings": ["Finding 1", "Finding 2", "Finding 3"],
-  "simplifiedExplanation": "A simple, patient-friendly explanation of what the results mean, avoiding overly complex medical jargon.",
-  "medications": [
-    {
-      "name": "Medication name",
-      "dosage": "e.g. 500mg",
-      "frequency": "e.g. Twice daily / Once daily",
-      "duration": "e.g. 5 days",
-      "instructions": "e.g. Take after food"
-    }
-  ]
-}
-
-Rules:
-- Include all medications found. If none, pass an empty array [].
-- Return ONLY the JSON object, absolutely NO markdown formatting or other text.
-- If it's hard to read, do your best to extract key points.`;
-
-    const body = {
-      contents: [
-        {
-          parts: [
-            { inline_data: { mime_type: mimeType, data: fileBase64 } },
-            { text: prompt },
-          ],
-        },
-      ],
-      generationConfig: { temperature: 0.2, maxOutputTokens: 2048 },
-    };
-
-    const response = await fetch(geminiUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      console.error("Gemini General Analyse Error:", errorData);
-      return res.status(response.status).json({ error: errorData?.error?.message || "AI General Analysis failed." });
-    }
-
-    const result = await response.json();
-    const text = result?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-    
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      return res.status(500).json({ error: "AI failed to return valid medical data." });
-    }
-    
-    res.json(JSON.parse(jsonMatch[0]));
-  } catch (err) {
-    console.error("General Analyse Exception:", err);
-    res.status(500).json({ error: "Internal server error during document analysis." });
-  }
-});
-
 // ── Local Dev Proxy: /api/fn/* routes mirror Netlify functions ───────────────
 // Vite rewrites /.netlify/functions/X → /api/fn/X during local development
 import { Router } from "express";
 const fnRouter = Router();
 
-fnRouter.post("/recovery-chat", async (req, res) => {
-  // Forward to the /api/chat handler
-  req.app._router.handle(Object.assign(req, { url: "/api/chat", originalUrl: "/api/chat" }), res, () => {});
-});
-
 // Use simple redirect approach
 app.use("/api/fn", (req, res) => {
   const mapping = {
-    "/recovery-chat": "/api/chat",
+    "/ai-chat": "/api/ai-chat",
     "/pull": "/api/pull",
     "/sync": "/api/sync",
-    "/analyse": "/api/analyse",
-    "/analyse-general": "/api/analyse-general",
   };
   const target = mapping[req.path];
   if (target) {
