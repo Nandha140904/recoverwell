@@ -156,7 +156,7 @@ export function SignIn() {
         console.log(`[Diagnostic] Initiating sign-in pull from: ${fetchUrl}`);
         
         const res = await fetchWithTimeout(
-          "/.netlify/functions/pull",
+          "/api/pull",
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },

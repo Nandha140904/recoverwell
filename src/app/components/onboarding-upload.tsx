@@ -47,7 +47,7 @@ async function analyseWithGemini(
   mimeType: string,
   extraText?: string
 ): Promise<GeminiAnalysis> {
-  const res = await fetch("/.netlify/functions/analyse", {
+  const res = await fetch("/api/analyse", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ fileBase64, mimeType, extraText }),

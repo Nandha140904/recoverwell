@@ -512,29 +512,31 @@ Rules:
 
 // ── Local Dev Proxy: /api/fn/* routes mirror Netlify functions ───────────────
 // Vite rewrites /.netlify/functions/X → /api/fn/X during local development
-app.post("/api/fn/recovery-chat", (req, res, next) => {
-  req.url = "/api/chat";
-  next();
+import { Router } from "express";
+const fnRouter = Router();
+
+fnRouter.post("/recovery-chat", async (req, res) => {
+  // Forward to the /api/chat handler
+  req.app._router.handle(Object.assign(req, { url: "/api/chat", originalUrl: "/api/chat" }), res, () => {});
 });
 
-app.post("/api/fn/pull", (req, res, next) => {
-  req.url = "/api/pull";
-  next();
-});
-
-app.post("/api/fn/sync", (req, res, next) => {
-  req.url = "/api/sync";
-  next();
-});
-
-app.post("/api/fn/analyse", (req, res, next) => {
-  req.url = "/api/analyse";
-  next();
-});
-
-app.post("/api/fn/analyse-general", (req, res, next) => {
-  req.url = "/api/analyse-general";
-  next();
+// Use simple redirect approach
+app.use("/api/fn", (req, res) => {
+  const mapping = {
+    "/recovery-chat": "/api/chat",
+    "/pull": "/api/pull",
+    "/sync": "/api/sync",
+    "/analyse": "/api/analyse",
+    "/analyse-general": "/api/analyse-general",
+  };
+  const target = mapping[req.path];
+  if (target) {
+    req.url = target;
+    req.originalUrl = target;
+    app.handle(req, res);
+  } else {
+    res.status(404).json({ error: "Unknown function" });
+  }
 });
 
 // ── Start ─────────────────────────────────────────────────────────────────────
