@@ -57,7 +57,7 @@ export const handler = async (event) => {
     console.error("Registration Error:", err);
     return {
       statusCode: 500,
-      body: JSON.stringify({ error: "Failed to create account in the cloud." })
+      body: JSON.stringify({ error: err.message || "Failed to create account in the cloud." })
     };
   }
 };
