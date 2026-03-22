@@ -1,3 +1,4 @@
+import { supabase } from "../lib/supabase";
 import { useState } from "react";
 import { useNavigate } from "react-router";
 import { useRecovery } from "./store";
@@ -119,7 +120,17 @@ export function SignIn() {
     try {
       const hash = await hashPassword(reg.password);
       
-      // Step 1: Create account in the cloud (Supabase)
+      // Step 1: Create account in Supabase Auth (Frontend)
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: `${reg.mobile}@recoverwell.app`,
+        password: reg.password,
+      });
+
+      if (authError) {
+        throw new Error(`Supabase Auth Error: ${authError.message}`);
+      }
+
+      // Step 2: Create profile in the backend database
       const res = await fetchWithTimeout("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -138,7 +149,7 @@ export function SignIn() {
         throw new Error(errorData.error || "Failed to create account in the cloud.");
       }
 
-      // Step 2: Set local state
+      // Step 3: Set local state
       setUserProfile({
         name: reg.name,
         doctorName: reg.doctorName,
